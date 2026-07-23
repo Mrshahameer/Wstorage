@@ -1,17 +1,21 @@
 // Service-role client. SERVER ONLY. Bypasses RLS — never import in client code.
-// Defaults to the `wstorage` schema so this product's tables stay isolated from
-// anything else in the same Supabase project. Every .from()/.rpc() call resolves
-// to wstorage.* automatically — no per-query changes needed.
-import { createClient } from "@supabase/supabase-js";
+// Runs against the `wstorage` schema so this product's tables stay isolated from
+// anything else in the same Supabase project.
+//
+// We intentionally cast to the untyped SupabaseClient: we don't ship generated
+// DB types, and pinning a custom schema makes supabase-js infer row types as
+// `never` (breaking `.select("col")` field access at build time). Casting keeps
+// query results as `any` for the compiler while the runtime still targets wstorage.
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 
-let cached: ReturnType<typeof createClient> | null = null;
+let cached: SupabaseClient | null = null;
 
-export function supabaseAdmin() {
+export function supabaseAdmin(): SupabaseClient {
   if (cached) return cached;
   cached = createClient(env.supabaseUrl(), env.supabaseServiceRoleKey(), {
     db: { schema: "wstorage" },
     auth: { autoRefreshToken: false, persistSession: false },
-  });
+  }) as unknown as SupabaseClient;
   return cached;
 }

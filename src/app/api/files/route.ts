@@ -22,15 +22,19 @@ export async function GET(req: NextRequest) {
       .select("id,name,description,extension,content_type,size_bytes,tags,download_count,created_at,current_version", { count: "exact" })
       .eq("status", "ready");
 
+    // Filters return the same builder type, so reassigning `query` is safe here.
     if (q) query = query.ilike("name", `%${q}%`);
     if (folderId) query = query.eq("folder_id", folderId);
     if (categoryId) query = query.eq("category_id", categoryId);
 
     const allowedSort = ["created_at", "name", "download_count", "size_bytes"];
     const sortCol = allowedSort.includes(sort) ? sort : "created_at";
-    query = query.order(sortCol, { ascending: dir }).range((page - 1) * pageSize, page * pageSize - 1);
 
-    const { data, count, error } = await query;
+    // .order()/.range() return a different builder type — apply inline in the await
+    // rather than reassigning to `query` (which strict TS would reject).
+    const { data, count, error } = await query
+      .order(sortCol, { ascending: dir })
+      .range((page - 1) * pageSize, page * pageSize - 1);
     if (error) throw new Error(error.message);
     return NextResponse.json({ files: data, total: count ?? 0, page, pageSize });
   } catch (e) {
