@@ -1,8 +1,10 @@
 // Refreshes the Supabase session cookie on every request and gates the app.
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 const PUBLIC_PATHS = ["/login", "/api/auth"];
+
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(req: NextRequest) {
   let res = NextResponse.next({ request: req });
@@ -13,7 +15,7 @@ export async function middleware(req: NextRequest) {
     {
       cookies: {
         getAll: () => req.cookies.getAll(),
-        setAll: (toSet) => {
+        setAll: (toSet: CookieToSet[]) => {
           toSet.forEach(({ name, value }) => req.cookies.set(name, value));
           res = NextResponse.next({ request: req });
           toSet.forEach(({ name, value, options }) => res.cookies.set(name, value, options));
