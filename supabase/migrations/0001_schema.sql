@@ -1,22 +1,19 @@
 -- ============================================================
--- Wstorage — Core schema  (v1.1, schema-isolated)
+-- Wstorage — Core schema
+-- IMPORTANT: everything lives in a dedicated `wstorage` schema so it
+-- CANNOT collide with the Webster Solutions product (which uses public.*:
+-- sources, routes, user_profiles, settings). This file never touches public.
 --
--- SAFE TO RUN alongside your other product. Everything lives in a
--- dedicated `wstorage` schema and creates NOTHING in `public`, so it
--- cannot touch your sources / routes / user_profiles / settings tables.
--- The only object on a shared table is one uniquely-named trigger on
--- auth.users (wstorage_on_auth_user_created) — it never affects yours.
+-- Run order: 0001_schema.sql -> 0002_rls.sql -> seed.sql
+-- After running, do the ONE dashboard step in README (expose the schema).
 -- ============================================================
 
 create schema if not exists wstorage;
-create extension if not exists pgcrypto;
+create extension if not exists "pgcrypto";   -- gen_random_uuid (global, shared, harmless)
 
--- Roles that can reach the schema. service_role is what the app uses.
-grant usage on schema wstorage to anon, authenticated, service_role;
-
--- ---------- Enums (namespaced inside wstorage) ----------
+-- ---------- Enums (schema-qualified) ----------
 do $$ begin
-  create type wstorage.role as enum ('super_admin', 'admin', 'employee');
+  create type wstorage.app_role as enum ('super_admin', 'admin', 'employee');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -27,17 +24,17 @@ do $$ begin
   create type wstorage.storage_key_status as enum ('active', 'revoked');
 exception when duplicate_object then null; end $$;
 
--- ---------- Profiles (mirrors auth.users) ----------
+-- ---------- Profiles (mirrors auth.users; Wstorage uses Supabase Auth) ----------
 create table if not exists wstorage.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
   full_name text,
-  role wstorage.role not null default 'employee',
+  role wstorage.app_role not null default 'employee',
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
--- ---------- Storage keys (dashboard-managed B2 credentials) ----------
+-- ---------- Storage keys (dashboard-managed Backblaze credentials) ----------
 create table if not exists wstorage.storage_keys (
   id uuid primary key default gen_random_uuid(),
   provider wstorage.storage_provider not null default 'backblaze',
@@ -90,7 +87,7 @@ create table if not exists wstorage.files (
   object_key text not null,
   current_version int not null default 1,
   download_count int not null default 0,
-  status text not null default 'pending',
+  status text not null default 'pending',   -- pending | ready
   uploaded_by uuid references wstorage.profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -162,31 +159,35 @@ returns void language sql security definer set search_path = wstorage as $$
   update wstorage.files set download_count = download_count + 1 where id = p_file_id;
 $$;
 
--- ---------- Auto-create a profile when an auth user is invited/created ----------
+-- ---------- Auto-create a Wstorage profile on new auth user ----------
+-- Named *_wstorage so it can never clash with a trigger the other product might add.
 create or replace function wstorage.handle_new_user()
-returns trigger language plpgsql security definer set search_path = wstorage as $$
+returns trigger language plpgsql security definer set search_path = wstorage, public as $$
 begin
   insert into wstorage.profiles (id, email, full_name, role)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'full_name', ''),
-    coalesce((new.raw_user_meta_data->>'role')::wstorage.role, 'employee')
+    coalesce((new.raw_user_meta_data->>'role')::wstorage.app_role, 'employee')
   )
   on conflict (id) do nothing;
   return new;
 end $$;
 
--- Uniquely named so it NEVER collides with any other product's auth trigger.
-drop trigger if exists wstorage_on_auth_user_created on auth.users;
-create trigger wstorage_on_auth_user_created
+drop trigger if exists on_auth_user_created_wstorage on auth.users;
+create trigger on_auth_user_created_wstorage
   after insert on auth.users
   for each row execute function wstorage.handle_new_user();
 
--- ---------- Grants (app uses service_role; authenticated kept for future direct reads) ----------
+-- ---------- Grants so PostgREST (service_role) can reach the schema ----------
+grant usage on schema wstorage to anon, authenticated, service_role;
 grant all on all tables in schema wstorage to service_role;
-grant select on all tables in schema wstorage to authenticated;
-grant usage, select on all sequences in schema wstorage to service_role;
+grant all on all sequences in schema wstorage to service_role;
 grant execute on all functions in schema wstorage to service_role, authenticated;
+-- authenticated gets row-gated access (RLS decides what's visible); see 0002.
+grant select, insert, update, delete on all tables in schema wstorage to authenticated;
+-- Future tables inherit the same grants automatically.
 alter default privileges in schema wstorage grant all on tables to service_role;
-alter default privileges in schema wstorage grant select on tables to authenticated;
+alter default privileges in schema wstorage grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema wstorage grant execute on functions to service_role, authenticated;

@@ -1,19 +1,21 @@
 -- ============================================================
--- Wstorage — Row Level Security (schema-isolated)
--- All policies target wstorage.* tables only. Nothing here touches public.
--- The app reads/writes via the service_role key (bypasses RLS); these
--- policies are defense-in-depth for any future direct client reads.
+-- Wstorage — Row Level Security (wstorage schema only)
+-- Writes to files/storage happen via server routes using the service role,
+-- which bypasses RLS. These policies gate any direct authenticated reads.
+-- Nothing here references or affects public.* (the other product).
 -- ============================================================
 
--- Helper: is the current user an admin? (SECURITY DEFINER avoids RLS recursion)
+-- Helper: current user's Wstorage role.
+-- Named current_app_role (NOT current_role) to avoid shadowing the Postgres built-in.
+create or replace function wstorage.current_app_role()
+returns wstorage.app_role language sql stable security definer set search_path = wstorage as $$
+  select role from wstorage.profiles where id = auth.uid();
+$$;
+
 create or replace function wstorage.is_admin()
 returns boolean language sql stable security definer set search_path = wstorage as $$
-  select coalesce(
-    (select role in ('admin','super_admin') from wstorage.profiles where id = auth.uid()),
-    false
-  );
+  select coalesce(wstorage.current_app_role() in ('admin','super_admin'), false);
 $$;
-grant execute on function wstorage.is_admin() to anon, authenticated, service_role;
 
 -- Enable RLS
 alter table wstorage.profiles         enable row level security;
@@ -28,7 +30,7 @@ alter table wstorage.collection_files enable row level security;
 alter table wstorage.activity_logs    enable row level security;
 alter table wstorage.downloads        enable row level security;
 
--- ----- profiles -----
+-- profiles
 drop policy if exists "own profile read" on wstorage.profiles;
 create policy "own profile read" on wstorage.profiles
   for select using (id = auth.uid() or wstorage.is_admin());
@@ -36,12 +38,12 @@ drop policy if exists "admin manage profiles" on wstorage.profiles;
 create policy "admin manage profiles" on wstorage.profiles
   for all using (wstorage.is_admin()) with check (wstorage.is_admin());
 
--- ----- storage_keys: admin metadata only; secret never leaves the server -----
+-- storage_keys: admins read metadata only; secret never leaves the server.
 drop policy if exists "admin read storage keys" on wstorage.storage_keys;
 create policy "admin read storage keys" on wstorage.storage_keys
   for select using (wstorage.is_admin());
 
--- Secret-free view for any future dashboard list; security_invoker => respects RLS.
+-- Secret-free view, respects caller RLS.
 create or replace view wstorage.storage_keys_safe
   with (security_invoker = true) as
   select id, provider, label, key_id, bucket_name, region,
@@ -49,7 +51,7 @@ create or replace view wstorage.storage_keys_safe
   from wstorage.storage_keys;
 grant select on wstorage.storage_keys_safe to authenticated;
 
--- ----- read-for-authenticated on the browsable tables -----
+-- Readable by any authenticated user; writes via server (service role).
 drop policy if exists "auth read files" on wstorage.files;
 create policy "auth read files" on wstorage.files
   for select using (auth.uid() is not null);
@@ -69,12 +71,12 @@ drop policy if exists "auth read collection_files" on wstorage.collection_files;
 create policy "auth read collection_files" on wstorage.collection_files
   for select using (auth.uid() is not null);
 
--- ----- favorites: user owns their own -----
+-- favorites: user owns their own
 drop policy if exists "own favorites" on wstorage.favorites;
 create policy "own favorites" on wstorage.favorites
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
--- ----- activity/downloads: admins read -----
+-- activity/downloads: admins read
 drop policy if exists "admin read activity" on wstorage.activity_logs;
 create policy "admin read activity" on wstorage.activity_logs
   for select using (wstorage.is_admin());

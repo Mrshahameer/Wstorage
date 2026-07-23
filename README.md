@@ -27,7 +27,7 @@ npm install
 
 Wstorage lives entirely in its own **`wstorage` Postgres schema**. The migrations create
 nothing in `public`, so they can't touch other products' tables in the same project. The
-only shared object is one uniquely-named trigger on `auth.users` (`wstorage_on_auth_user_created`).
+only shared object is one uniquely-named trigger on `auth.users` (`on_auth_user_created_wstorage`).
 
 1. Create (or reuse) a project at supabase.com.
 2. In the SQL editor, run `supabase/migrations/0001_schema.sql`, then `0002_rls.sql`, then `supabase/seed.sql`.

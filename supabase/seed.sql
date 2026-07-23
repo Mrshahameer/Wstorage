@@ -1,9 +1,8 @@
 -- ============================================================
--- Wstorage — Seed (run AFTER inviting your first user in Supabase Auth)
+-- Wstorage — Seed (wstorage schema). Safe to run alongside the other product.
+-- Run AFTER inviting your first user in Supabase Auth, then promote them:
+--   update wstorage.profiles set role = 'super_admin' where email = 'you@company.com';
 -- ============================================================
-
--- Promote yourself to super_admin (edit the email):
--- update wstorage.profiles set role = 'super_admin' where email = 'you@company.com';
 
 insert into wstorage.categories (name) values
   ('Programming'), ('Clients'), ('Videos'), ('Design'), ('Documents')

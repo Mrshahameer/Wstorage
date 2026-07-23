@@ -12,7 +12,7 @@
  *
  * Usage:
  *   node scripts/test-b2.mjs                       # uploads test-assets/hello.txt
- *   node scripts/test-b2.mjs test-assets/wisko-test.png
+ *   node scripts/test-b2.mjs test-assets/wstorage-test.png
  *   node scripts/test-b2.mjs /path/to/anything
  *
  * Reads these from .env.local (NOT the encrypted DB — this is a raw connectivity test):
