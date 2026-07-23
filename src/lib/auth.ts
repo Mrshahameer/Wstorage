@@ -11,23 +11,29 @@ export interface SessionUser {
   is_active: boolean;
 }
 
-/** Returns the current user + role, or null if not logged in. */
+/** Returns the current user + role, or null if not logged in / on any error. */
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  try {
+    const supabase = await createServerSupabase();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
 
-  // Profile carries the role. Use admin client to avoid RLS recursion edge-cases.
-  const { data: profile } = await supabaseAdmin()
-    .from("profiles")
-    .select("id,email,role,is_active")
-    .eq("id", user.id)
-    .single();
+    // Profile carries the role. Use admin client to avoid RLS recursion edge-cases.
+    const { data: profile } = await supabaseAdmin()
+      .from("profiles")
+      .select("id,email,role,is_active")
+      .eq("id", user.id)
+      .single();
 
-  if (!profile || !profile.is_active) return null;
-  return profile as SessionUser;
+    if (!profile || !profile.is_active) return null;
+    return profile as SessionUser;
+  } catch {
+    // Misconfig or transient error → treat as logged out (page sends to /login)
+    // instead of throwing a 500.
+    return null;
+  }
 }
 
 export function roleAtLeast(role: Role, min: Role): boolean {
