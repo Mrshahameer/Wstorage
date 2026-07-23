@@ -13,7 +13,7 @@ function first(...names: string[]): string {
 export const env = {
   supabaseUrl: () => first("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"),
   supabaseAnonKey: () =>
-    first("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY", "SUPABASE_KEY"),
+    first("NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY", "SUPABASE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
   supabaseServiceRoleKey: () =>
     first("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY"),
   appEncryptionKey: () => first("APP_ENCRYPTION_KEY"),

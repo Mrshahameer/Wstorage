@@ -1,8 +1,12 @@
-// Browser client (uses anon key, respects RLS).
+// Browser client. Must reference NEXT_PUBLIC_* env vars STATICALLY — Next.js only
+// inlines literal process.env.NEXT_PUBLIC_X references into the browser bundle,
+// not dynamic lookups. Uses the publishable key (or anon key if present).
 "use client";
 import { createBrowserClient } from "@supabase/ssr";
-import { env } from "@/lib/env";
 
 export function createClient() {
-  return createBrowserClient(env.supabaseUrl(), env.supabaseAnonKey());
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+  const key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) as string;
+  return createBrowserClient(url, key);
 }
