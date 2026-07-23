@@ -69,7 +69,7 @@ const s3 = new S3Client({
   credentials: { accessKeyId: KEY_ID, secretAccessKey: APP_KEY },
 });
 
-console.log(`\nWisko DAM — B2 pipeline test`);
+console.log(`\nWstorage — B2 pipeline test`);
 console.log(`  endpoint : ${endpoint}`);
 console.log(`  bucket   : ${BUCKET}`);
 console.log(`  file     : ${filePath} (${body.length} bytes, ${contentType})`);

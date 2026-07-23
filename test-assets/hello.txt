@@ -1,4 +1,4 @@
-Wisko DAM — test asset
+Wstorage — test asset
 =======================
 This file is generated purely for pipeline testing.
 No copyright. Upload it, confirm it lands in the Backblaze console, delete it.

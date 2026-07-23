@@ -1,4 +1,4 @@
-# Wisko DAM
+# Wstorage
 
 Internal Digital Asset Management. Next.js 15 (App Router) + Supabase (Auth + Postgres) + Backblaze B2 (S3-compatible) storage, with an encrypted, dashboard-managed multi-key system.
 
@@ -23,13 +23,20 @@ Analytics widgets, version-restore UI, folders tree, collections, favorites UI, 
 npm install
 ```
 
-### 2. Supabase
-1. Create a project at supabase.com.
+### 2. Supabase (shared project — safe alongside other products)
+
+Wstorage lives entirely in its own **`wstorage` Postgres schema**. The migrations create
+nothing in `public`, so they can't touch other products' tables in the same project. The
+only shared object is one uniquely-named trigger on `auth.users` (`wstorage_on_auth_user_created`).
+
+1. Create (or reuse) a project at supabase.com.
 2. In the SQL editor, run `supabase/migrations/0001_schema.sql`, then `0002_rls.sql`, then `supabase/seed.sql`.
-3. Auth → Providers: keep email enabled, **disable public sign-ups** (Auth → Sign In / Providers → turn off "Allow new users to sign up"). You invite users instead (Auth → Users → Invite).
-4. Invite yourself, then in SQL run:
+3. **Expose the schema (required):** Settings → API → **Exposed schemas** → add `wstorage` → Save.
+   Without this, the app's queries return `schema must be one of ...` errors.
+4. Auth → Providers: keep email enabled, **disable public sign-ups** (turn off "Allow new users to sign up"). You invite users instead (Auth → Users → Invite).
+5. Invite yourself, then in SQL run:
    ```sql
-   update public.profiles set role = 'super_admin' where email = 'you@company.com';
+   update wstorage.profiles set role = 'super_admin' where email = 'you@company.com';
    ```
 
 ### 3. Environment

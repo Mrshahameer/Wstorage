@@ -1,19 +1,15 @@
 -- ============================================================
--- Wisko DAM — Seed
--- Run AFTER creating your first user in Supabase Auth (invite yourself).
--- Then promote that user to super_admin.
+-- Wstorage — Seed (run AFTER inviting your first user in Supabase Auth)
 -- ============================================================
 
--- Example: promote a user to super_admin by email.
--- update public.profiles set role = 'super_admin' where email = 'you@company.com';
+-- Promote yourself to super_admin (edit the email):
+-- update wstorage.profiles set role = 'super_admin' where email = 'you@company.com';
 
--- Starter categories
-insert into public.categories (name) values
+insert into wstorage.categories (name) values
   ('Programming'), ('Clients'), ('Videos'), ('Design'), ('Documents')
 on conflict (name) do nothing;
 
--- Root folders
-insert into public.folders (name, path) values
+insert into wstorage.folders (name, path) values
   ('Programming', '/Programming'),
   ('Clients', '/Clients'),
   ('Videos', '/Videos')

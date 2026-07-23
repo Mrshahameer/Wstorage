@@ -23,7 +23,7 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-sm">
-      <h1 className="text-xl font-semibold">Wisko DAM</h1>
+      <h1 className="text-xl font-semibold">Wstorage</h1>
       <p className="mt-1 text-sm text-neutral-500">Sign in to continue. Access is invite-only.</p>
       <div className="mt-6 space-y-3">
         <input

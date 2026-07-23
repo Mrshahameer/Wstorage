@@ -5,7 +5,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Wisko brand-ish neutral palette; tweak freely.
+        // Wstorage brand-ish neutral palette; tweak freely.
         brand: { DEFAULT: "#2563eb", dark: "#1e40af" },
       },
     },

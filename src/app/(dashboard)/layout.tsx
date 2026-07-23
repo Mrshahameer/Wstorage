@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen flex">
       <aside className="w-56 shrink-0 border-r bg-white p-4">
-        <div className="text-lg font-semibold">Wisko DAM</div>
+        <div className="text-lg font-semibold">Wstorage</div>
         <nav className="mt-6 space-y-1 text-sm">
           <Link className="block rounded px-2 py-1.5 hover:bg-neutral-100" href="/dashboard">Dashboard</Link>
           <Link className="block rounded px-2 py-1.5 hover:bg-neutral-100" href="/files">Files</Link>
