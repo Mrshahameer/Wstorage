@@ -12,6 +12,8 @@ export function SidebarNav({ isAdmin, isSuper }: { isAdmin: boolean; isSuper: bo
   const links: { href: string; label: string; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", show: true },
     { href: "/files", label: "Files", show: true },
+    { href: "/settings/categories", label: "Categories", show: isAdmin },
+    { href: "/settings/folders", label: "Folders", show: isAdmin },
     { href: "/settings/users", label: "Users & access", show: isAdmin },
     { href: "/settings/storage-keys", label: "Storage keys", show: isAdmin },
   ];

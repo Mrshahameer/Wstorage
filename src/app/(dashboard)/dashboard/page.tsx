@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getSessionUser } from "@/lib/auth";
+import { KeyRequestsPanel } from "@/components/key-requests-panel";
+import { PersonalKeyWizard } from "@/components/personal-key-wizard";
 
 function fmtBytes(n: number) {
   const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; let v = n;
@@ -28,6 +30,7 @@ async function loadStats() {
 export default async function DashboardPage() {
   const user = await getSessionUser();
   const s = await loadStats();
+  const isSuper = user?.role === "super_admin";
   const cards = [
     { label: "Files", value: s.files.toLocaleString() },
     { label: "Storage used", value: fmtBytes(s.totalBytes) },
@@ -35,7 +38,7 @@ export default async function DashboardPage() {
     { label: "Team members", value: s.users.toLocaleString() },
   ];
   return (
-    <div>
+    <div className="space-y-8">
       <div className="flex items-baseline justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
@@ -43,7 +46,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
           <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{c.label}</div>
@@ -52,7 +55,12 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white">
+      {/* Key Requests & Personal Storage Approval Panel */}
+      <div className="grid grid-cols-1 gap-6">
+        <KeyRequestsPanel isSuperAdmin={isSuper} />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white">
         <div className="px-5 py-3 border-b border-slate-100 text-sm font-medium text-slate-700">Recent activity</div>
         {s.activity.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-slate-400">No activity yet.</div>
@@ -74,3 +82,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
