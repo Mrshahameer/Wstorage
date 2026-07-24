@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
       .select("id,name,description,extension,content_type,size_bytes,tags,download_count,created_at,folder_id,category_id", { count: "exact" })
       .eq("status", "ready");
 
-    if (q) query = query.ilike("name", `%${q}%`);
+    if (q) {
+      // Multi-field search across Name, Description, Extension, and Tags array
+      query = query.or(`name.ilike.%${q}%,description.ilike.%${q}%,extension.ilike.%${q}%,tags.cs.{${q}}`);
+    }
     if (folderId) query = query.eq("folder_id", folderId);
 
     // Access control for non-admins: only granted folders + the shared (no-folder) pool.

@@ -87,6 +87,19 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                     <div className="min-w-0">
                       <div className="font-medium text-slate-800 truncate">{f.name}</div>
                       {f.description && <div className="text-xs text-slate-400 truncate">{f.description}</div>}
+                      {f.tags && f.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {f.tags.map((t) => (
+                            <button
+                              key={t}
+                              onClick={() => setQ(t)}
+                              className="inline-block rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-100 transition"
+                            >
+                              #{t}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
