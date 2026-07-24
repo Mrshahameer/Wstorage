@@ -9,7 +9,8 @@
     "lint": "next lint",
     "gen:key": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
     "test:b2": "node scripts/test-b2.mjs",
-    "test:b2:keep": "node scripts/test-b2.mjs --keep"
+    "test:b2:keep": "node scripts/test-b2.mjs --keep",
+    "b2:cors": "node scripts/set-b2-cors.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",

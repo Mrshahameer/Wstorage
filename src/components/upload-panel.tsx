@@ -56,15 +56,20 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
     }
 
     update(file.name, { status: "Uploading…" });
-    await new Promise<void>((resolve, reject) => {
+    const ok = await new Promise<boolean>((resolve) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", presign.presigned.url);
       xhr.setRequestHeader("Content-Type", presign.presigned.headers["Content-Type"]);
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(file.name, { progress: Math.round((e.loaded / e.total) * 100) }); };
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`)));
-      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+      xhr.onerror = () => resolve(false); // CORS/network failures land here (status 0)
       xhr.send(file);
-    }).catch((err) => update(file.name, { status: err.message }));
+    });
+    if (!ok) {
+      return update(file.name, {
+        status: "Upload blocked — allow this site on your bucket (set CORS). See setup.",
+      });
+    }
 
     update(file.name, { status: "Finalizing…" });
     const complete = await fetch("/api/upload/complete", {
