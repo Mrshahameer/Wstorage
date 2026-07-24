@@ -93,11 +93,27 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                 <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{fmtBytes(Number(f.size_bytes))}</td>
                 <td className="px-5 py-3 text-slate-600">{f.download_count}</td>
                 <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{new Date(f.created_at).toLocaleDateString()}</td>
-                <td className="px-5 py-3 text-right">
+                <td className="px-5 py-3 text-right space-x-2">
                   <a href={`/api/download/${f.id}`}
                     className="inline-flex items-center rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition">
                     Download
                   </a>
+                  {canUpload && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Are you sure you want to delete "${f.name}"?`)) return;
+                        const res = await fetch(`/api/files/${f.id}`, { method: "DELETE" });
+                        if (res.ok) {
+                          load();
+                        } else {
+                          const j = await res.json();
+                          alert(j.error || "Failed to delete file");
+                        }
+                      }}
+                      className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 transition">
+                      Delete
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
