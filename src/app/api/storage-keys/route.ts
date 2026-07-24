@@ -18,7 +18,7 @@ const AddSchema = z.object({
   label: z.string().min(1),
   keyId: z.string().min(1),
   applicationKey: z.string().min(1),
-  bucketId: z.string().min(1),
+  bucketId: z.string().optional().default(""),
   bucketName: z.string().min(1),
   region: z.string().min(1),
   makeActive: z.boolean().optional(),

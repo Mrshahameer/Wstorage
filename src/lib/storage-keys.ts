@@ -33,7 +33,7 @@ export async function addStorageKey(input: AddKeyInput, createdBy: string) {
       label: input.label,
       key_id: input.keyId,
       secret_encrypted: encryptSecret(input.applicationKey),
-      bucket_id: input.bucketId,
+      bucket_id: input.bucketId || null,
       bucket_name: input.bucketName,
       region: input.region,
       is_active: !!input.makeActive,

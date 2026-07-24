@@ -10,28 +10,23 @@ const Schema = z.object({
   fileName: z.string().min(1),
   contentType: z.string().min(1),
   sizeBytes: z.number().int().nonnegative(),
+  description: z.string().optional().default(""),
+  tags: z.array(z.string()).optional().default([]),
   folderId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
-  sha256: z.string().optional(), // client-computed for dedupe
+  sha256: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
   try {
-    // Employees cannot upload by default (PRD); admin+ can.
-    const user = await requireRole("admin");
+    const user = await requireRole("admin"); // employees can't upload
     const input = Schema.parse(await req.json());
     const db = supabaseAdmin();
 
-    // Duplicate detection (PRD): warn if same hash already exists.
     let duplicate = null;
     if (input.sha256) {
       const { data } = await db
-        .from("files")
-        .select("id,name")
-        .eq("sha256", input.sha256)
-        .eq("status", "ready")
-        .limit(1)
-        .maybeSingle();
+        .from("files").select("id,name").eq("sha256", input.sha256).eq("status", "ready").limit(1).maybeSingle();
       duplicate = data ?? null;
     }
 
@@ -39,11 +34,12 @@ export async function POST(req: NextRequest) {
     const ext = input.fileName.includes(".") ? input.fileName.split(".").pop()! : "";
     const objectKey = `${new Date().getFullYear()}/${crypto.randomUUID()}${ext ? "." + ext : ""}`;
 
-    // Create a pending file row we finalize after the client PUT succeeds.
     const { data: file, error } = await db
       .from("files")
       .insert({
         name: input.fileName,
+        description: input.description || null,
+        tags: input.tags,
         extension: ext || null,
         content_type: input.contentType,
         size_bytes: input.sizeBytes,
@@ -55,12 +51,10 @@ export async function POST(req: NextRequest) {
         status: "pending",
         uploaded_by: user.id,
       })
-      .select("id")
-      .single();
+      .select("id").single();
     if (error) throw new Error(error.message);
 
     const presigned = await provider.createUploadUrl(objectKey, input.contentType, 900);
-
     return NextResponse.json({ fileId: file.id, presigned, duplicate });
   } catch (e) {
     return handleError(e);

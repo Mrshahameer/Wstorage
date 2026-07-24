@@ -6,10 +6,5 @@ export default async function FilesPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const canUpload = user.role === "admin" || user.role === "super_admin";
-  return (
-    <div>
-      <h1 className="text-xl font-semibold">Files</h1>
-      <FilesBrowser canUpload={canUpload} />
-    </div>
-  );
+  return <FilesBrowser canUpload={canUpload} />;
 }

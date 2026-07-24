@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Wstorage",
-  description: "Internal Digital Asset Management",
+  description: "Secure internal file storage",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

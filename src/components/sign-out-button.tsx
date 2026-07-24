@@ -4,11 +4,12 @@ import { createClient } from "@/lib/supabase/client";
 
 export function SignOutButton() {
   const router = useRouter();
-  async function signOut() {
-    await createClient().auth.signOut();
-    router.replace("/login");
-  }
   return (
-    <button onClick={signOut} className="text-brand hover:underline">Sign out</button>
+    <button
+      onClick={async () => { await createClient().auth.signOut(); router.replace("/login"); }}
+      className="text-sm text-slate-400 hover:text-white transition"
+    >
+      Sign out
+    </button>
   );
 }
