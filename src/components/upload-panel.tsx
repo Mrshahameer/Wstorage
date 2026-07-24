@@ -56,19 +56,22 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
     }
 
     update(file.name, { status: "Uploading…" });
-    const ok = await new Promise<boolean>((resolve) => {
+    const result = await new Promise<{ ok: boolean; status: number; body: string }>((resolve) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", presign.presigned.url);
       xhr.setRequestHeader("Content-Type", presign.presigned.headers["Content-Type"]);
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(file.name, { progress: Math.round((e.loaded / e.total) * 100) }); };
-      xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-      xhr.onerror = () => resolve(false); // CORS/network failures land here (status 0)
+      xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: (xhr.responseText || "").slice(0, 300) });
+      xhr.onerror = () => resolve({ ok: false, status: 0, body: "" }); // CORS/network → status 0
       xhr.send(file);
     });
-    if (!ok) {
-      return update(file.name, {
-        status: "Upload blocked — allow this site on your bucket (set CORS). See setup.",
-      });
+    if (!result.ok) {
+      const msg =
+        result.status === 0
+          ? "Blocked by CORS/network (status 0)"
+          : `Storage rejected upload — HTTP ${result.status}${result.body ? ": " + result.body.replace(/<[^>]+>/g, " ").trim().slice(0, 160) : ""}`;
+      console.error("Upload failed:", result.status, result.body);
+      return update(file.name, { status: msg });
     }
 
     update(file.name, { status: "Finalizing…" });

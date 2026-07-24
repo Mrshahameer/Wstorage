@@ -25,7 +25,14 @@ export class BackblazeProvider implements StorageProvider {
     this.client = new S3Client({
       region: record.region,
       endpoint,
-      forcePathStyle: false,
+      // Path-style is the most reliable with Backblaze's S3 endpoint.
+      forcePathStyle: true,
+      // CRITICAL for Backblaze presigned PUT from a browser:
+      // the AWS SDK (>=3.729) adds automatic CRC32 checksums to PutObject, which
+      // makes the signature expect an x-amz-checksum header the browser never sends
+      // → every browser upload 403s. Only checksum when the operation truly requires it.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
       credentials: {
         accessKeyId: record.key_id,
         secretAccessKey: decryptSecret(record.secret_encrypted),
