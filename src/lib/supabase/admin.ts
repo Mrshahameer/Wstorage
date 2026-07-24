@@ -13,7 +13,9 @@ let cached: SupabaseClient | null = null;
 
 export function supabaseAdmin(): SupabaseClient {
   if (cached) return cached;
-  cached = createClient(env.supabaseUrl(), env.supabaseServiceRoleKey(), {
+  const url = env.supabaseUrl() || "https://placeholder.supabase.co";
+  const key = env.supabaseServiceRoleKey() || "placeholder-service-role-key";
+  cached = createClient(url, key, {
     db: { schema: "wstorage" },
     auth: { autoRefreshToken: false, persistSession: false },
   }) as unknown as SupabaseClient;

@@ -7,7 +7,9 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function createServerSupabase() {
   const cookieStore = await cookies();
-  return createServerClient(env.supabaseUrl(), env.supabaseAnonKey(), {
+  const url = env.supabaseUrl() || "https://placeholder.supabase.co";
+  const key = env.supabaseAnonKey() || "placeholder-anon-key";
+  return createServerClient(url, key, {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (toSet: CookieToSet[]) => {
