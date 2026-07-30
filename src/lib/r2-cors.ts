@@ -14,6 +14,8 @@ export async function enableR2Cors(key: StorageKeyRecord, origin: string) {
     region: "auto",
     endpoint: `https://${key.account_id}.r2.cloudflarestorage.com`,
     forcePathStyle: true,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: key.key_id,
       secretAccessKey: decryptSecret(key.secret_encrypted),
