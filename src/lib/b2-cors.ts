@@ -1,21 +1,13 @@
-// Sets an UPLOAD-permitting CORS rule on the active bucket using Backblaze's
-// native API (server -> B2, no browser CORS involved). Requires the active
-// storage key to have the `writeBuckets` capability.
-import { supabaseAdmin } from "@/lib/supabase/admin";
+// Sets an UPLOAD-permitting CORS rule on a Backblaze B2 bucket using B2's
+// native API (server -> B2, no browser CORS involved). Requires the storage
+// key to have the `writeBuckets` capability.
 import { decryptSecret } from "@/lib/crypto";
+import type { StorageKeyRecord } from "@/lib/storage/types";
 
-export async function enableBucketCors(origin: string) {
-  const { data: key } = await supabaseAdmin()
-    .from("storage_keys")
-    .select("*")
-    .eq("is_active", true)
-    .eq("status", "active")
-    .single();
-  if (!key) throw new Error("No active storage key. Add one first.");
-
-  const keyId = key.key_id as string;
-  const appKey = decryptSecret(key.secret_encrypted as string);
-  const bucketName = key.bucket_name as string;
+export async function enableB2Cors(key: StorageKeyRecord, origin: string) {
+  const keyId = key.key_id;
+  const appKey = decryptSecret(key.secret_encrypted);
+  const bucketName = key.bucket_name;
 
   const auth = await fetch("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", {
     headers: { Authorization: "Basic " + Buffer.from(`${keyId}:${appKey}`).toString("base64") },

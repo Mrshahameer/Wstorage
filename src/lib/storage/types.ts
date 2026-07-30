@@ -10,7 +10,7 @@ export interface PresignedUpload {
 }
 
 export interface StorageProvider {
-  readonly name: string;        // 'backblaze'
+  readonly name: string;        // 'backblaze' | 'r2'
   readonly storageKeyId: string; // DB id of the credential backing this provider
 
   /** Presigned PUT URL so large files upload straight to storage (skips our server). */
@@ -29,13 +29,16 @@ export interface StorageProvider {
 
 export interface StorageKeyRecord {
   id: string;
-  provider: "backblaze";
+  provider: "backblaze" | "r2";
   label: string;
   key_id: string;
   secret_encrypted: string;
-  bucket_id: string;
+  bucket_id: string | null;
   bucket_name: string;
   region: string;
+  /** Cloudflare account ID — only set (and only needed) for provider === 'r2'.
+   *  Used to build the R2 endpoint: https://<account_id>.r2.cloudflarestorage.com */
+  account_id: string | null;
   is_active: boolean;
   status: "active" | "revoked";
 }

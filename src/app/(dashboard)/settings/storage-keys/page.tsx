@@ -9,7 +9,7 @@ export default async function StorageKeysPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">Storage keys</h1>
-      <p className="text-sm text-slate-500 mt-1">Manage the Backblaze credentials used for uploads. Add a new key, make it active, revoke the old one — no redeploy.</p>
+      <p className="text-sm text-slate-500 mt-1">Manage the Backblaze B2 or Cloudflare R2 credentials used for uploads. Add a new key, make it active, revoke the old one — no redeploy.</p>
       <div className="mt-6"><StorageKeysManager /></div>
     </div>
   );

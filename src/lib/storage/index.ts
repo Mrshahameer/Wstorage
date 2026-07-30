@@ -3,11 +3,14 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { StorageKeyRecord, StorageProvider } from "./types";
 import { BackblazeProvider } from "./backblaze";
+import { R2Provider } from "./r2";
 
 function build(record: StorageKeyRecord): StorageProvider {
   switch (record.provider) {
     case "backblaze":
       return new BackblazeProvider(record);
+    case "r2":
+      return new R2Provider(record);
     default:
       throw new Error(`Unsupported provider: ${record.provider}`);
   }

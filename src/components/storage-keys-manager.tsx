@@ -2,10 +2,14 @@
 import { useEffect, useState } from "react";
 
 interface KeyRow {
-  id: string; label: string; key_id: string; bucket_name: string; region: string;
-  is_active: boolean; status: "active" | "revoked"; created_at: string;
+  id: string; provider: "backblaze" | "r2"; label: string; key_id: string; bucket_name: string;
+  region: string; account_id: string | null; is_active: boolean; status: "active" | "revoked"; created_at: string;
 }
-const empty = { label: "", keyId: "", applicationKey: "", bucketId: "", bucketName: "", region: "us-west-004", makeActive: true };
+const empty = {
+  provider: "backblaze" as "backblaze" | "r2",
+  label: "", keyId: "", applicationKey: "", bucketId: "", bucketName: "",
+  region: "us-west-004", accountId: "", makeActive: true,
+};
 const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none";
 
 export function StorageKeysManager() {
@@ -51,7 +55,7 @@ export function StorageKeysManager() {
           <div>
             <h2 className="font-medium text-indigo-900">Enable browser uploads</h2>
             <p className="text-sm text-indigo-700/80 mt-1">
-              Backblaze blocks uploads from a website until the bucket allows this site. Click once to set that up for your active key's bucket.
+              Storage providers block uploads from a website until the bucket allows this site. Click once to set that up for your active key's bucket (works for both Backblaze and R2).
             </p>
           </div>
           <button onClick={enableUploads} disabled={corsBusy}
@@ -63,23 +67,47 @@ export function StorageKeysManager() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-medium">Add a Backblaze key</h2>
+        <h2 className="font-medium">Add a storage key</h2>
         <p className="text-sm text-slate-500 mt-1">
           Use a key scoped to one bucket. The secret is encrypted before storage and never shown again.
         </p>
+
+        <label className="mt-4 block text-sm max-w-xs">
+          <span className="text-slate-600">Provider</span>
+          <select
+            value={form.provider}
+            onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value as "backblaze" | "r2" }))}
+            className={inputCls + " mt-1"}
+          >
+            <option value="backblaze">Backblaze B2</option>
+            <option value="r2">Cloudflare R2</option>
+          </select>
+        </label>
+
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Label" v={form.label} on={set("label")} placeholder="e.g. Company bucket" />
-          <Field label="Region" v={form.region} on={set("region")} placeholder="us-west-004" />
-          <Field label="Key ID" v={form.keyId} on={set("keyId")} placeholder="applicationKeyId" />
-          <Field label="Application key (secret)" v={form.applicationKey} on={set("applicationKey")} type="password" />
+          {form.provider === "backblaze" ? (
+            <Field label="Region" v={form.region} on={set("region")} placeholder="us-west-004" />
+          ) : (
+            <Field label="Cloudflare Account ID" v={form.accountId} on={set("accountId")} placeholder="the <ACCOUNT_ID> in https://<ACCOUNT_ID>.r2.cloudflarestorage.com" />
+          )}
+          <Field label="Key ID" v={form.keyId} on={set("keyId")} placeholder={form.provider === "r2" ? "Access Key ID" : "applicationKeyId"} />
+          <Field label="Application key (secret)" v={form.applicationKey} on={set("applicationKey")} type="password" placeholder={form.provider === "r2" ? "Secret Access Key" : undefined} />
           <Field label="Bucket name" v={form.bucketName} on={set("bucketName")} placeholder="my-bucket" />
-          <Field label="Bucket ID (optional)" v={form.bucketId} on={set("bucketId")} placeholder="leave blank if unsure" />
+          {form.provider === "backblaze" && (
+            <Field label="Bucket ID (optional)" v={form.bucketId} on={set("bucketId")} placeholder="leave blank if unsure" />
+          )}
         </div>
         <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={form.makeActive} onChange={set("makeActive")} /> Use this key for new uploads
         </label>
         {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
-        <button onClick={add} disabled={busy || !form.label || !form.keyId || !form.applicationKey || !form.bucketName}
+        <button
+          onClick={add}
+          disabled={
+            busy || !form.label || !form.keyId || !form.applicationKey || !form.bucketName ||
+            (form.provider === "backblaze" ? !form.region : !form.accountId)
+          }
           className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
           {busy ? "Saving…" : "Add key"}
         </button>
@@ -92,6 +120,7 @@ export function StorageKeysManager() {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
                 <th className="px-5 py-3 font-medium">Label</th>
+                <th className="px-5 py-3 font-medium">Provider</th>
                 <th className="px-5 py-3 font-medium">Bucket</th>
                 <th className="px-5 py-3 font-medium">Key ID</th>
                 <th className="px-5 py-3 font-medium">State</th>
@@ -102,7 +131,13 @@ export function StorageKeysManager() {
               {keys.map((k) => (
                 <tr key={k.id} className="hover:bg-slate-50/70">
                   <td className="px-5 py-3 font-medium text-slate-800">{k.label}</td>
-                  <td className="px-5 py-3 text-slate-600">{k.bucket_name} <span className="text-slate-400">({k.region})</span></td>
+                  <td className="px-5 py-3 text-slate-600">{k.provider === "r2" ? "Cloudflare R2" : "Backblaze B2"}</td>
+                  <td className="px-5 py-3 text-slate-600">
+                    {k.bucket_name}{" "}
+                    <span className="text-slate-400">
+                      ({k.provider === "r2" ? k.account_id : k.region})
+                    </span>
+                  </td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{k.key_id}</td>
                   <td className="px-5 py-3">
                     {k.status === "revoked"
@@ -115,7 +150,7 @@ export function StorageKeysManager() {
                   </td>
                 </tr>
               ))}
-              {keys.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400">No keys yet.</td></tr>}
+              {keys.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400">No keys yet.</td></tr>}
             </tbody>
           </table>
         </div>
