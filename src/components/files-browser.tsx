@@ -5,6 +5,7 @@ import { UploadPanel } from "./upload-panel";
 interface FileRow {
   id: string; name: string; description: string | null; extension: string | null;
   size_bytes: number; download_count: number; created_at: string; tags: string[];
+  storage_keys?: { provider: string; label: string; bucket_name: string } | null;
 }
 
 function fmtBytes(n: number) {
@@ -85,7 +86,18 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                   <div className="flex items-center gap-3">
                     <span className="text-lg leading-none">{iconFor(f.extension)}</span>
                     <div className="min-w-0">
-                      <div className="font-medium text-slate-800 truncate">{f.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-800 truncate">{f.name}</span>
+                        {f.storage_keys && (
+                          <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
+                            f.storage_keys.provider === "r2"
+                              ? "bg-sky-50 text-sky-700 border border-sky-200"
+                              : "bg-amber-50 text-amber-800 border border-amber-200"
+                          }`}>
+                            {f.storage_keys.provider === "r2" ? "☁️ Cloudflare R2" : "📦 Backblaze B2"}
+                          </span>
+                        )}
+                      </div>
                       {f.description && <div className="text-xs text-slate-400 truncate">{f.description}</div>}
                       {f.tags && f.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">

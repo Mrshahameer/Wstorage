@@ -6,14 +6,14 @@ import { BackblazeProvider } from "./backblaze";
 import { R2Provider } from "./r2";
 
 function build(record: StorageKeyRecord): StorageProvider {
-  switch (record.provider) {
-    case "backblaze":
-      return new BackblazeProvider(record);
-    case "r2":
-      return new R2Provider(record);
-    default:
-      throw new Error(`Unsupported provider: ${record.provider}`);
+  const p = String(record.provider || "").trim().toLowerCase();
+  if (p === "r2" || p === "cloudflare" || p === "cloudflare_r2") {
+    return new R2Provider(record);
   }
+  if (p === "backblaze" || p === "b2") {
+    return new BackblazeProvider(record);
+  }
+  throw new Error(`Unsupported provider: ${record.provider}`);
 }
 
 /** The currently active key used for NEW uploads (or a specific selected key). */

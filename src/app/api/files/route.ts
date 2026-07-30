@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     let query = db
       .from("files")
-      .select("id,name,description,extension,content_type,size_bytes,tags,download_count,created_at,folder_id,category_id", { count: "exact" })
+      .select("id,name,description,extension,content_type,size_bytes,tags,download_count,created_at,folder_id,category_id,storage_key_id,storage_keys(provider,label,bucket_name)", { count: "exact" })
       .eq("status", "ready");
 
     if (q) {
