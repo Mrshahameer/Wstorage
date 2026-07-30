@@ -10,12 +10,15 @@ async function sha256Hex(file: File): Promise<string> {
 interface Item { name: string; progress: number; status: string; done: boolean; }
 type Folder = { id: string; name: string };
 type Category = { id: string; name: string };
+type StorageKey = { id: string; label: string; provider: string; bucket_name: string; is_active: boolean };
 
 export function UploadPanel({ onDone }: { onDone?: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Record<string, Item>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [storageKeys, setStorageKeys] = useState<StorageKey[]>([]);
+  const [storageKeyId, setStorageKeyId] = useState("");
   const [folderId, setFolderId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [description, setDescription] = useState("");
@@ -25,6 +28,7 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
   useEffect(() => {
     fetch("/api/folders").then((r) => r.json()).then((j) => setFolders(j.folders ?? [])).catch(() => {});
     fetch("/api/categories").then((r) => r.json()).then((j) => setCategories(j.categories ?? [])).catch(() => {});
+    fetch("/api/storage-keys").then((r) => r.json()).then((j) => setStorageKeys(j.keys ?? [])).catch(() => {});
   }, []);
 
   const update = (name: string, patch: Partial<Item>) =>
@@ -45,6 +49,7 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         folderId: folderId || null,
         categoryId: categoryId || null,
+        storageKeyId: storageKeyId || undefined,
         sha256: sha,
       }),
     });
@@ -94,6 +99,17 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="text-sm sm:col-span-2">
+          <span className="text-slate-600 font-medium">Storage Destination</span>
+          <select value={storageKeyId} onChange={(e) => setStorageKeyId(e.target.value)} className={inputCls + " mt-1 font-medium bg-slate-50 border-indigo-200"}>
+            <option value="">Default Active Storage Provider</option>
+            {storageKeys.map((k) => (
+              <option key={k.id} value={k.id}>
+                {k.label} — {k.provider.toUpperCase()} ({k.bucket_name}){k.is_active ? " [ACTIVE]" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="text-sm">
           <span className="text-slate-600">Folder</span>
           <select value={folderId} onChange={(e) => setFolderId(e.target.value)} className={inputCls + " mt-1"}>

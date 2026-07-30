@@ -16,8 +16,11 @@ function build(record: StorageKeyRecord): StorageProvider {
   }
 }
 
-/** The currently active key used for NEW uploads. */
-export async function getActiveProvider(): Promise<StorageProvider> {
+/** The currently active key used for NEW uploads (or a specific selected key). */
+export async function getActiveProvider(storageKeyId?: string): Promise<StorageProvider> {
+  if (storageKeyId) {
+    return getProviderForKeyId(storageKeyId);
+  }
   const { data, error } = await supabaseAdmin()
     .from("storage_keys")
     .select("*")

@@ -14,6 +14,7 @@ const Schema = z.object({
   tags: z.array(z.string()).optional().default([]),
   folderId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
+  storageKeyId: z.string().uuid().optional(),
   sha256: z.string().optional(),
 });
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       duplicate = data ?? null;
     }
 
-    const provider = await getActiveProvider();
+    const provider = await getActiveProvider(input.storageKeyId);
     const ext = input.fileName.includes(".") ? input.fileName.split(".").pop()! : "";
     const objectKey = `${new Date().getFullYear()}/${crypto.randomUUID()}${ext ? "." + ext : ""}`;
 
