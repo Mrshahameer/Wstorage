@@ -6,7 +6,7 @@ import { handleError } from "@/lib/api";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireRole("admin");
+    await requireRole("super_admin");
     const db = supabaseAdmin();
     const limit = Math.min(200, parseInt(req.nextUrl.searchParams.get("limit") ?? "100", 10));
 

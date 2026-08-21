@@ -7,7 +7,7 @@ import { handleError } from "@/lib/api";
 
 export async function GET() {
   try {
-    await requireRole("admin");
+    await requireRole("super_admin");
     const db = supabaseAdmin();
 
     const [
