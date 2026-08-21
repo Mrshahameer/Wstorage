@@ -31,7 +31,7 @@ const CreateSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   fullName: z.string().optional().default(""),
-  role: z.enum(["employee", "admin", "super_admin"]).default("employee"),
+  role: z.enum(["client", "employee", "bd_manager", "manager", "admin", "super_admin"]).default("employee"),
 });
 
 // Create (invite) a user: makes the auth account and sets the role via metadata,

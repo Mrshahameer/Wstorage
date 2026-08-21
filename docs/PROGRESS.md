@@ -4,10 +4,10 @@
 > and what to do next. Full detail lives in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 > After finishing a task: tick its box, and add a dated line under **Session log**.
 
-- **Current phase:** Phase 2 nearly complete; Phase 3 DONE. Phase 4 next.
-- **Next task:** Expose the new filters in the Search UI (`/files` — vertical / campaign type /
-  resource type / buyer / date), then start Phase 4: **granular-permission grant UI** on the
-  Users & Access page, and the **analytics dashboard**.
+- **Current phase:** Blueprint UI built out (dashboard, activity, roles, grant tree, search filters,
+  shared, campaign counts). Phases 2–4 largely complete.
+- **Next task:** Remaining polish — folder-page UI with breadcrumb + subfolders (§43), BD/Client
+  dashboard fine-tuning, DENY/expiry controls in the grant tree, bulk operations, versioning UI.
 - **Last updated:** 2026-08-21
 - **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
   `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
@@ -48,16 +48,27 @@
 - [x] Admin UI: `/settings/share-links` (create by folder/campaign, password/expiry/cap, copy/disable/delete)
 - [ ] "Create Share Link" shortcut inside folder + asset views (currently only the admin page)
 
-## Phase 4 — Advanced (some pulled forward)
+## Phase 4 — Advanced (mostly done)
 - [x] Granular `user_resource_permissions` table (7 actions, ALLOW/DENY, inherit, expiry)
-- [x] Permission resolver `src/lib/permissions.ts` (chain walk, DENY-beats-ALLOW, legacy view-grant fallback)
-- [x] Expanded roles enum: + `manager`, `bd_manager`, `client`
-- [ ] Grant UI to assign granular permissions per user (Users & access still folder-grants only)
-- [ ] Wire resolver into download/upload routes (still using legacy `canAccessFile`)
-- [ ] Analytics dashboard (totals, most-accessed, most-downloaded, active users)
-- [ ] Versioning UI (restore / compare)
-- [ ] Bulk upload queue (progress / retry / cancel)
-- [ ] Favorites + Recently accessed + advanced reporting
+- [x] Permission resolver `src/lib/permissions.ts` (chain walk, DENY-beats-ALLOW, legacy fallback)
+- [x] Expanded roles enum + all 6 roles selectable in Users & access
+- [x] **Grant UI** — hierarchy tree (Category › Vertical › Campaign + Folders) writing view+download
+      grants (`src/components/access-tree.tsx`, `/api/permissions`)
+- [x] **Access enforcement unified** — `accessScope()` merges legacy grants + granular grants with
+      inheritance; `/api/files` listing gated by it (verified: grant campaign → user sees only that campaign)
+- [x] **Analytics dashboard** (`/api/analytics` + role-aware `dashboard-home.tsx`): totals, most-downloaded,
+      most-active users, recent uploads, recent share links
+- [x] **Activity logs** page + `/api/activity` (blueprint §29)
+- [x] **Roles & permissions** matrix page (blueprint §14)
+- [x] **Search filters** (category / vertical / resource type / file type) — blueprint §44
+- [x] **Shared with me** page (blueprint §4/§31)
+- [x] **Campaign resource-type counts** in the library (blueprint §12)
+- [ ] Folder-page UI with breadcrumb + subfolders (§43); DENY/expiry in grant tree; bulk ops; versioning UI
+
+## Blueprint UI coverage map
+Dashboard §30/31/32 ✅ · Campaign Library §17 ✅ · Search §44 ✅ · Shared §4 ✅ · Asset detail §26 ✅ ·
+Preview §25 ✅ · Campaign counts §12 ✅ · Users & Access §45 ✅ · Roles §14 ✅ · Share Links §19 ✅ ·
+Activity Logs §29 ✅ · Storage ✅(existing) · Upload §24 ✅ · Nav §33 ✅
 
 ---
 
@@ -70,6 +81,11 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
 
+- **2026-08-21 (session 5)** — Built the full blueprint UI: role-aware analytics dashboard (§30/31/32),
+  Activity Logs (§29), Roles & permissions matrix (§14), granular access-grant tree on Users & Access
+  (§45) with real enforcement via `accessScope()`, Search filters (§44), Shared-with-me (§4), and
+  campaign resource-type counts (§12). All 6 roles selectable. Verified live (9 checks incl. the
+  grant→enforcement chain: grant a campaign, user sees only that campaign) — 0 failures. Committed.
 - **2026-08-21 (session 4)** — Built the asset detail + inline preview page (image/video/audio/pdf,
   metadata w/ embedded taxonomy names, versions, download/copy/share actions) and the card-based
   Campaign Library (`/library`: Category › Vertical › Campaign › assets). Extended files API with

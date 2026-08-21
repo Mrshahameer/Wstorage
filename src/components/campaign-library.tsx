@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type Sel = { id: string; name: string } | null;
 interface Row { id: string; name: string; buyer?: string | null }
-interface FileRow { id: string; name: string; extension: string | null; size_bytes: number; download_count: number }
+interface FileRow { id: string; name: string; extension: string | null; size_bytes: number; download_count: number; resource_types?: { name: string } | null }
 
 function fmtBytes(n: number) {
   const u = ["B", "KB", "MB", "GB"]; let i = 0; let v = Number(n);
@@ -79,7 +79,17 @@ export function CampaignLibrary() {
         files.length === 0 ? (
           <p className="text-sm text-slate-400">No assets in this campaign yet.</p>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="space-y-4">
+            {/* Resource-type summary (blueprint §12) */}
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white">{files.length} assets</span>
+              {Object.entries(files.reduce((acc: Record<string, number>, f) => {
+                const k = f.resource_types?.name || "Other"; acc[k] = (acc[k] || 0) + 1; return acc;
+              }, {})).sort((a, b) => b[1] - a[1]).map(([name, n]) => (
+                <span key={name} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">{name} · {n}</span>
+              ))}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <ul className="divide-y divide-slate-50">
               {files.map((f) => (
                 <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
@@ -94,6 +104,7 @@ export function CampaignLibrary() {
                 </li>
               ))}
             </ul>
+            </div>
           </div>
         )
       ) : rows.length === 0 ? (
