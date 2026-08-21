@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { UploadPanel } from "./upload-panel";
 
@@ -87,7 +88,7 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                     <span className="text-lg leading-none">{iconFor(f.extension)}</span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-800 truncate">{f.name}</span>
+                        <Link href={`/files/${f.id}`} className="font-medium text-slate-800 truncate hover:text-indigo-600 hover:underline">{f.name}</Link>
                         {f.storage_keys && (
                           <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
                             f.storage_keys.provider === "r2"
