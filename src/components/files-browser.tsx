@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { UploadPanel } from "./upload-panel";
 
@@ -24,29 +25,56 @@ function iconFor(ext: string | null) {
   return "📁";
 }
 
+type Opt = { id: string; name: string };
+
 export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
   const [q, setQ] = useState("");
   const [files, setFiles] = useState<FileRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
 
+  // Filters
+  const [categories, setCategories] = useState<Opt[]>([]);
+  const [verticals, setVerticals] = useState<Opt[]>([]);
+  const [resourceTypes, setResourceTypes] = useState<Opt[]>([]);
+  const [categoryId, setCategoryId] = useState("");
+  const [verticalId, setVerticalId] = useState("");
+  const [resourceTypeId, setResourceTypeId] = useState("");
+  const [ext, setExt] = useState("");
+
+  useEffect(() => {
+    const j = (u: string) => fetch(u).then((r) => r.json());
+    j("/api/categories").then((d) => setCategories(d.categories ?? [])).catch(() => {});
+    j("/api/verticals").then((d) => setVerticals(d.verticals ?? [])).catch(() => {});
+    j("/api/resource-types").then((d) => setResourceTypes(d.resourceTypes ?? [])).catch(() => {});
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/files?q=${encodeURIComponent(q)}`);
+      const p = new URLSearchParams();
+      if (q) p.set("q", q);
+      if (categoryId) p.set("categoryId", categoryId);
+      if (verticalId) p.set("verticalId", verticalId);
+      if (resourceTypeId) p.set("resourceTypeId", resourceTypeId);
+      if (ext) p.set("ext", ext);
+      const r = await fetch(`/api/files?${p.toString()}`);
       const j = await r.json();
       if (r.ok) setFiles(j.files);
     } finally { setLoading(false); }
-  }, [q]);
+  }, [q, categoryId, verticalId, resourceTypeId, ext]);
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+
+  const clearFilters = () => { setCategoryId(""); setVerticalId(""); setResourceTypeId(""); setExt(""); };
+  const hasFilters = categoryId || verticalId || resourceTypeId || ext;
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Files</h1>
-          <p className="text-sm text-slate-500 mt-1">Search, preview, and download company assets.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
+          <p className="text-sm text-slate-500 mt-1">Find any campaign asset by name, tag, vertical, or resource type.</p>
         </div>
         {canUpload && (
           <button onClick={() => setShowUpload(true)}
@@ -57,8 +85,27 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
       </div>
 
       <div className="mt-6">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, description, or tag…"
           className="w-full max-w-md rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {(() => { const s = "rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 bg-white"; return (<>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={s}>
+            <option value="">All categories</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={verticalId} onChange={(e) => setVerticalId(e.target.value)} className={s}>
+            <option value="">All verticals</option>
+            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <select value={resourceTypeId} onChange={(e) => setResourceTypeId(e.target.value)} className={s}>
+            <option value="">All resource types</option>
+            {resourceTypes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="File type (mp4, pdf…)" className={s + " w-36"} />
+          {hasFilters && <button onClick={clearFilters} className="text-xs text-indigo-600 hover:underline">Clear filters</button>}
+        </>); })()}
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -87,7 +134,7 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                     <span className="text-lg leading-none">{iconFor(f.extension)}</span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-800 truncate">{f.name}</span>
+                        <Link href={`/files/${f.id}`} className="font-medium text-slate-800 truncate hover:text-indigo-600 hover:underline">{f.name}</Link>
                         {f.storage_keys && (
                           <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
                             f.storage_keys.provider === "r2"

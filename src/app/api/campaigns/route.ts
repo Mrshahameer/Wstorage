@@ -4,25 +4,28 @@ import { requireUser, requireRole, logActivity } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await requireUser();
-    const { data } = await supabaseAdmin()
-      .from("categories")
-      .select("id,name,icon,sort")
-      .order("sort")
+    const verticalId = req.nextUrl.searchParams.get("verticalId");
+    let q = supabaseAdmin()
+      .from("campaigns")
+      .select("id,vertical_id,campaign_type_id,name,buyer,status,created_at")
       .order("name");
-    return NextResponse.json({ categories: data ?? [] });
+    if (verticalId) q = q.eq("vertical_id", verticalId);
+    const { data } = await q;
+    return NextResponse.json({ campaigns: data ?? [] });
   } catch (e) {
     return handleError(e);
   }
 }
 
 const CreateSchema = z.object({
+  verticalId: z.string().uuid(),
+  campaignTypeId: z.string().uuid().nullable().optional(),
   name: z.string().min(1),
-  icon: z.string().optional(),
+  buyer: z.string().optional(),
   description: z.string().optional(),
-  sort: z.number().int().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -30,19 +33,20 @@ export async function POST(req: NextRequest) {
     const actor = await requireRole("admin");
     const body = CreateSchema.parse(await req.json());
     const { data, error } = await supabaseAdmin()
-      .from("categories")
+      .from("campaigns")
       .insert({
+        vertical_id: body.verticalId,
+        campaign_type_id: body.campaignTypeId ?? null,
         name: body.name,
-        icon: body.icon ?? null,
+        buyer: body.buyer ?? null,
         description: body.description ?? null,
-        sort: body.sort ?? 0,
         created_by: actor.id,
       })
       .select("id,name")
       .single();
     if (error) throw new Error(error.message);
-    await logActivity(actor.id, "category_created", { type: "category", id: data.id, detail: { name: body.name } });
-    return NextResponse.json({ category: data });
+    await logActivity(actor.id, "campaign_created", { type: "campaign", id: data.id, detail: { name: body.name } });
+    return NextResponse.json({ campaign: data });
   } catch (e) {
     return handleError(e);
   }

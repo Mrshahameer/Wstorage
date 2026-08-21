@@ -5,9 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
-type CookieToSet = { name: string; value: string; options: CookieOptions };
-
+const PUBLIC_PATHS = ["/login", "/api/auth", "/share", "/api/share"];
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(req: NextRequest) {

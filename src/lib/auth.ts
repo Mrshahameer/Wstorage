@@ -2,7 +2,13 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export type Role = "super_admin" | "admin" | "employee";
+export type Role =
+  | "super_admin"
+  | "admin"
+  | "manager"
+  | "bd_manager"
+  | "employee"
+  | "client";
 
 export interface SessionUser {
   id: string;
@@ -36,9 +42,19 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   }
 }
 
+// Ordered least → most privileged. Inserting bd_manager/manager/client preserves
+// the existing employee < admin < super_admin relationships that current routes rely on.
+export const ROLE_ORDER: Record<Role, number> = {
+  client: 1,
+  employee: 2,
+  bd_manager: 3,
+  manager: 4,
+  admin: 5,
+  super_admin: 6,
+};
+
 export function roleAtLeast(role: Role, min: Role): boolean {
-  const order: Record<Role, number> = { employee: 1, admin: 2, super_admin: 3 };
-  return order[role] >= order[min];
+  return (ROLE_ORDER[role] ?? 0) >= (ROLE_ORDER[min] ?? 0);
 }
 
 /** Throws a Response-friendly error object when the user lacks the role. */

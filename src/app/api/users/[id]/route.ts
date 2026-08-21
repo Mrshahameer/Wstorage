@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
 
 const PatchSchema = z.object({
-  role: z.enum(["employee", "admin", "super_admin"]).optional(),
+  role: z.enum(["client", "employee", "bd_manager", "manager", "admin", "super_admin"]).optional(),
   isActive: z.boolean().optional(),
   folderIds: z.array(z.string().uuid()).optional(), // full replace of access
 });
