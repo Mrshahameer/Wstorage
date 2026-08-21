@@ -4,10 +4,12 @@
 > and what to do next. Full detail lives in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 > After finishing a task: tick its box, and add a dated line under **Session log**.
 
-- **Current phase:** Blueprint UI built out (dashboard, activity, roles, grant tree, search filters,
-  shared, campaign counts). Phases 2–4 largely complete.
-- **Next task:** Remaining polish — folder-page UI with breadcrumb + subfolders (§43), BD/Client
-  dashboard fine-tuning, DENY/expiry controls in the grant tree, bulk operations, versioning UI.
+- **Current phase:** Live taxonomy seeded (3 categories → 35 verticals → 89 campaigns → 650 resource
+  folders). Campaign Library now navigates Category›Vertical›Campaign›Folder›assets with a
+  super-admin Upload button inside each folder. Verified visually end-to-end.
+- **Next task:** Await owner's spec for what goes inside each folder / further per-mode tweaks.
+  Standing requirement: **production quality + scale to 1000s of users**, provider-extensible,
+  never break existing (see memory wstorage-scalability).
 - **Last updated:** 2026-08-21
 - **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
   `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
@@ -78,9 +80,27 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 
 ---
 
+## Live data model (seeded on production Supabase)
+- **Categories (3):** Insurance, Home Services, Web Leads
+- **Verticals (35):** Insurance 15, Home Services 12, Web Leads 8
+- **Campaigns (89):** each Insurance/Home-Services vertical → Pure Inbound / Warm Transfer / Live
+  Transfer; each Web Leads vertical → Inbound. Named "<Vertical> <Mode>".
+- **Resource folders (650):** per campaign, by mode —
+  Inbound: Creatives, Landing Pages, Ad Copy, Ad Spend Screenshots, Ads Preview Screenshots, TCPA & Compliance, Other Assets.
+  Warm Transfer: + Agent Scripts, Data Samples, Call Recordings (no ad-spend/preview split).
+  Live Transfer: Creatives, Landing Pages, Agent Scripts, Verification Recordings, Data Samples, TCPA & Compliance, Other Assets.
+- Reseed scripts: `scripts/reset-and-seed.mjs` (DESTRUCTIVE wipe+categories/verticals),
+  `scripts/seed-campaigns.mjs`, `scripts/seed-folders.mjs`.
+
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
 
+- **2026-08-21 (session 6)** — Reset live DB to 3 categories and seeded the full taxonomy: 35
+  verticals, 89 mode campaigns, 650 resource folders. Added the folder level to Campaign Library
+  (Category›Vertical›Campaign›Folder›assets) with a super-admin-only Upload button that presets the
+  destination folder. Migration 0007 (folders.sort). Verified the whole path in-browser incl. the
+  upload modal. Owner set a standing requirement: production quality + scale to 1000s of users,
+  provider-extensible, never break existing.
 - **2026-08-21 (session 5)** — Built the full blueprint UI: role-aware analytics dashboard (§30/31/32),
   Activity Logs (§29), Roles & permissions matrix (§14), granular access-grant tree on Users & Access
   (§45) with real enforcement via `accessScope()`, Search filters (§44), Shared-with-me (§4), and

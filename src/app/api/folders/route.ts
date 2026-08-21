@@ -5,14 +5,25 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
 import { isAdmin, grantedFolderIds } from "@/lib/access";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await requireUser();
     const db = supabaseAdmin();
-    const { data } = await db.from("folders").select("id,name,path,parent_id,created_at").order("name");
+    const campaignId = req.nextUrl.searchParams.get("campaignId");
+
+    let query = db
+      .from("folders")
+      .select("id,name,path,parent_id,folder_type,campaign_id,sort,created_at")
+      .order("sort")
+      .order("name");
+    if (campaignId) query = query.eq("campaign_id", campaignId);
+    const { data } = await query;
     let folders = data ?? [];
-    // Employees only see folders they're granted.
-    if (!isAdmin(user)) {
+
+    // When scoped to a campaign, resource folders are visible to anyone who can
+    // see that campaign (its files are separately access-gated by /api/files).
+    // The unscoped list still respects legacy per-folder grants for employees.
+    if (!isAdmin(user) && !campaignId) {
       const ids = new Set(await grantedFolderIds(user.id));
       folders = folders.filter((f: { id: string }) => ids.has(f.id));
     }

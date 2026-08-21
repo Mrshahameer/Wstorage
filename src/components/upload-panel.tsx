@@ -15,7 +15,11 @@ type Campaign = { id: string; name: string; buyer: string | null };
 type ResourceType = { id: string; name: string };
 type StorageKey = { id: string; label: string; provider: string; bucket_name: string; is_active: boolean };
 
-export function UploadPanel({ onDone }: { onDone?: () => void }) {
+export function UploadPanel({ onDone, preset }: {
+  onDone?: () => void;
+  preset?: { folderId: string; campaignId?: string | null; verticalId?: string | null; destinationLabel?: string };
+}) {
+  const compact = !!preset;
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Record<string, Item>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -25,29 +29,31 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
   const [storageKeys, setStorageKeys] = useState<StorageKey[]>([]);
   const [storageKeyId, setStorageKeyId] = useState("");
-  const [folderId, setFolderId] = useState("");
+  const [folderId, setFolderId] = useState(preset?.folderId ?? "");
   const [categoryId, setCategoryId] = useState("");
-  const [verticalId, setVerticalId] = useState("");
-  const [campaignId, setCampaignId] = useState("");
+  const [verticalId, setVerticalId] = useState(preset?.verticalId ?? "");
+  const [campaignId, setCampaignId] = useState(preset?.campaignId ?? "");
   const [resourceTypeId, setResourceTypeId] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
+    if (compact) return; // preset upload doesn't need the destination pickers
     fetch("/api/folders").then((r) => r.json()).then((j) => setFolders(j.folders ?? [])).catch(() => {});
     fetch("/api/categories").then((r) => r.json()).then((j) => setCategories(j.categories ?? [])).catch(() => {});
     fetch("/api/verticals").then((r) => r.json()).then((j) => setVerticals(j.verticals ?? [])).catch(() => {});
     fetch("/api/resource-types").then((r) => r.json()).then((j) => setResourceTypes(j.resourceTypes ?? [])).catch(() => {});
     fetch("/api/storage-keys").then((r) => r.json()).then((j) => setStorageKeys(j.keys ?? [])).catch(() => {});
-  }, []);
+  }, [compact]);
 
-  // Campaigns depend on the chosen vertical.
+  // Campaigns depend on the chosen vertical (interactive mode only).
   useEffect(() => {
+    if (compact) return;
     setCampaignId("");
     if (!verticalId) return setCampaigns([]);
     fetch(`/api/campaigns?verticalId=${verticalId}`).then((r) => r.json()).then((j) => setCampaigns(j.campaigns ?? [])).catch(() => {});
-  }, [verticalId]);
+  }, [verticalId, compact]);
 
   const update = (name: string, patch: Partial<Item>) =>
     setItems((s) => ({ ...s, [name]: { ...(s[name] ?? { name, progress: 0, status: "", done: false }), ...patch } }));
@@ -119,6 +125,12 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
 
   return (
     <div className="space-y-4">
+      {compact && preset?.destinationLabel && (
+        <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm text-indigo-800">
+          Uploading to <span className="font-semibold">{preset.destinationLabel}</span>
+        </div>
+      )}
+      {!compact && (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="text-sm sm:col-span-2">
           <span className="text-slate-600 font-medium">Storage Destination</span>
@@ -175,6 +187,7 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
           <input value={tags} onChange={(e) => setTags(e.target.value)} className={inputCls + " mt-1"} placeholder="comma, separated, tags" />
         </label>
       </div>
+      )}
 
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
