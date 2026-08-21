@@ -4,11 +4,14 @@
 > and what to do next. Full detail lives in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 > After finishing a task: tick its box, and add a dated line under **Session log**.
 
-- **Current phase:** Phase 2 in progress; Phase 3 (share links) backend + UI DONE
-- **Next task:** Phase 2 — wire the campaign taxonomy (Vertical / Campaign / Resource Type) selectors
-  into the **upload flow** (`src/components/upload-panel.tsx` + `api/upload/presign`, write the
-  denormalized `vertical_id`/`campaign_id`/`resource_type_id`), then build the **asset detail + preview** page.
+- **Current phase:** Phase 2 in progress; Phase 3 (share links) DONE; upload taxonomy DONE
+- **Next task:** Build the **asset detail + preview page** (image/video/audio/pdf) and the
+  **card-based Campaign Library** browse IA (`/files` is still the old flat browser).
 - **Last updated:** 2026-08-21
+- **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
+  `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
+  key is set in `.env.local` — or re-add the storage key so it re-encrypts with the current key.
+  Taxonomy + share-link CREATION work regardless (DB-only).
 
 ---
 
@@ -30,7 +33,7 @@
 - [x] Admin page: **Campaign management** (`/settings/campaigns`) — manage the semantic tree
 - [x] Taxonomy APIs: `/api/verticals`, `/api/campaign-types`, `/api/campaigns`, `/api/resource-types`, categories POST
 - [x] Rename **Files → Campaign Library** in nav + group admin links under "Administration"
-- [ ] Upload flow: Category→Vertical→Campaign Type→Campaign→Resource Type selectors (write denormalized fields)
+- [x] Upload flow: Vertical → Campaign → Resource Type selectors (writes denormalized fields via presign)
 - [ ] Card-based Campaign Library browse IA (`/files` still the old flat browser)
 - [ ] Asset detail page + preview (image / video / audio / pdf)
 - [ ] Extend search: vertical / campaign type / resource type / buyer / date filters
@@ -66,6 +69,11 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
 
+- **2026-08-21 (session 3)** — Live-DB testing: applied migration 0006 to the real Supabase,
+  ran 49 checks (HTTP probes + DB integration + authenticated E2E) — 0 failures, no broken
+  endpoints. Wired Vertical/Campaign/Resource-Type selectors into the upload flow (presign now
+  persists the denormalized fields). Found the storage secret needs the original
+  `APP_ENCRYPTION_KEY` (presign fails clean-400 without it). Committed on branch `feat/campaign-portal`.
 - **2026-08-21 (session 2)** — Executed the blueprint. Phase 0 build fix (middleware). Wrote
   migration `0006` (semantic layer + resource types + granular permissions + share links).
   Built taxonomy APIs + Campaign management UI. Built the **entire share-link system** end-to-end

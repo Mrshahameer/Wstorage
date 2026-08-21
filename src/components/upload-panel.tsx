@@ -10,6 +10,9 @@ async function sha256Hex(file: File): Promise<string> {
 interface Item { name: string; progress: number; status: string; done: boolean; }
 type Folder = { id: string; name: string };
 type Category = { id: string; name: string };
+type Vertical = { id: string; name: string };
+type Campaign = { id: string; name: string; buyer: string | null };
+type ResourceType = { id: string; name: string };
 type StorageKey = { id: string; label: string; provider: string; bucket_name: string; is_active: boolean };
 
 export function UploadPanel({ onDone }: { onDone?: () => void }) {
@@ -17,10 +20,16 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
   const [items, setItems] = useState<Record<string, Item>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [verticals, setVerticals] = useState<Vertical[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
   const [storageKeys, setStorageKeys] = useState<StorageKey[]>([]);
   const [storageKeyId, setStorageKeyId] = useState("");
   const [folderId, setFolderId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [verticalId, setVerticalId] = useState("");
+  const [campaignId, setCampaignId] = useState("");
+  const [resourceTypeId, setResourceTypeId] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -28,8 +37,17 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
   useEffect(() => {
     fetch("/api/folders").then((r) => r.json()).then((j) => setFolders(j.folders ?? [])).catch(() => {});
     fetch("/api/categories").then((r) => r.json()).then((j) => setCategories(j.categories ?? [])).catch(() => {});
+    fetch("/api/verticals").then((r) => r.json()).then((j) => setVerticals(j.verticals ?? [])).catch(() => {});
+    fetch("/api/resource-types").then((r) => r.json()).then((j) => setResourceTypes(j.resourceTypes ?? [])).catch(() => {});
     fetch("/api/storage-keys").then((r) => r.json()).then((j) => setStorageKeys(j.keys ?? [])).catch(() => {});
   }, []);
+
+  // Campaigns depend on the chosen vertical.
+  useEffect(() => {
+    setCampaignId("");
+    if (!verticalId) return setCampaigns([]);
+    fetch(`/api/campaigns?verticalId=${verticalId}`).then((r) => r.json()).then((j) => setCampaigns(j.campaigns ?? [])).catch(() => {});
+  }, [verticalId]);
 
   const update = (name: string, patch: Partial<Item>) =>
     setItems((s) => ({ ...s, [name]: { ...(s[name] ?? { name, progress: 0, status: "", done: false }), ...patch } }));
@@ -49,6 +67,9 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         folderId: folderId || null,
         categoryId: categoryId || null,
+        verticalId: verticalId || null,
+        campaignId: campaignId || null,
+        resourceTypeId: resourceTypeId || null,
         storageKeyId: storageKeyId || undefined,
         sha256: sha,
       }),
@@ -122,6 +143,27 @@ export function UploadPanel({ onDone }: { onDone?: () => void }) {
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputCls + " mt-1"}>
             <option value="">None</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-600">Vertical</span>
+          <select value={verticalId} onChange={(e) => setVerticalId(e.target.value)} className={inputCls + " mt-1"}>
+            <option value="">None</option>
+            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-600">Campaign</span>
+          <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className={inputCls + " mt-1"} disabled={!verticalId}>
+            <option value="">{verticalId ? "None" : "Pick a vertical first"}</option>
+            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}{c.buyer ? ` · ${c.buyer}` : ""}</option>)}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-600">Resource type</span>
+          <select value={resourceTypeId} onChange={(e) => setResourceTypeId(e.target.value)} className={inputCls + " mt-1"}>
+            <option value="">None</option>
+            {resourceTypes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
         <label className="text-sm sm:col-span-2">
