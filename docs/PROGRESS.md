@@ -92,6 +92,15 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 - Reseed scripts: `scripts/reset-and-seed.mjs` (DESTRUCTIVE wipe+categories/verticals),
   `scripts/seed-campaigns.mjs`, `scripts/seed-folders.mjs`.
 
+## Uploads
+- **Any file type** — no allowlist; unknown types fall back to application/octet-stream. ZIP, mp3,
+  mp4, txt, docx, pdf, extensionless, etc. all upload.
+- **Folder upload** — "Upload a folder" button (webkitdirectory) and drag-drop of a whole folder
+  (recursive). Nested subfolders are recreated in the DB under the target resource folder
+  (`/api/folders` POST with parentId+campaignId), files land in the matching subfolder.
+- Campaign Library browses arbitrary nesting (folder stack); top-level folder listing uses
+  `?campaignId` (parent null), deeper uses `?parentId`.
+
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
 

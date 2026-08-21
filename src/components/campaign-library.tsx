@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { UploadPanel } from "./upload-panel";
 
-type Sel = { id: string; name: string } | null;
+type Sel = { id: string; name: string };
 interface Row { id: string; name: string; buyer?: string | null }
 interface FolderRow { id: string; name: string }
 interface FileRow { id: string; name: string; extension: string | null; size_bytes: number; download_count: number }
@@ -47,10 +47,10 @@ const Card = ({ title, subtitle, emoji, onClick }: { title: string; subtitle?: s
 );
 
 export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
-  const [cat, setCat] = useState<Sel>(null);
-  const [vert, setVert] = useState<Sel>(null);
-  const [camp, setCamp] = useState<Sel>(null);
-  const [folder, setFolder] = useState<Sel>(null);
+  const [cat, setCat] = useState<Sel | null>(null);
+  const [vert, setVert] = useState<Sel | null>(null);
+  const [camp, setCamp] = useState<Sel | null>(null);
+  const [stack, setStack] = useState<Sel[]>([]); // nested resource folders
   const [rows, setRows] = useState<Row[]>([]);
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [files, setFiles] = useState<FileRow[]>([]);
@@ -58,22 +58,35 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
   const [showUpload, setShowUpload] = useState(false);
 
   const j = async (u: string) => (await fetch(u)).json();
+  const current = stack.length ? stack[stack.length - 1] : null;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (!cat) { const d = await j("/api/categories"); setRows(d.categories ?? []); }
-      else if (!vert) { const d = await j(`/api/verticals?categoryId=${cat.id}`); setRows(d.verticals ?? []); }
-      else if (!camp) { const d = await j(`/api/campaigns?verticalId=${vert.id}`); setRows(d.campaigns ?? []); }
-      else if (!folder) { const d = await j(`/api/folders?campaignId=${camp.id}`); setFolders(d.folders ?? []); }
-      else { const d = await j(`/api/files?folderId=${folder.id}`); setFiles(d.files ?? []); }
+      if (!cat) { setRows((await j("/api/categories")).categories ?? []); }
+      else if (!vert) { setRows((await j(`/api/verticals?categoryId=${cat.id}`)).verticals ?? []); }
+      else if (!camp) { setRows((await j(`/api/campaigns?verticalId=${vert.id}`)).campaigns ?? []); }
+      else if (stack.length === 0) { setFolders((await j(`/api/folders?campaignId=${camp.id}`)).folders ?? []); setFiles([]); }
+      else {
+        const cur = stack[stack.length - 1];
+        const [f, fi] = await Promise.all([j(`/api/folders?parentId=${cur.id}`), j(`/api/files?folderId=${cur.id}`)]);
+        setFolders(f.folders ?? []);
+        setFiles(fi.files ?? []);
+      }
     } finally { setLoading(false); }
-  }, [cat, vert, camp, folder]);
+  }, [cat, vert, camp, stack]);
   useEffect(() => { load(); }, [load]);
 
-  const level = !cat ? "category" : !vert ? "vertical" : !camp ? "campaign" : !folder ? "folder" : "files";
+  const level = !cat ? "category" : !vert ? "vertical" : !camp ? "campaign" : "folders";
+  const inFolder = !!camp && stack.length > 0;
 
-  const crumb = (label: string, onClick?: () => void) =>
+  const resetTo = (target: "all" | "cat" | "vert" | "camp") => {
+    if (target === "all") { setCat(null); setVert(null); setCamp(null); setStack([]); }
+    if (target === "cat") { setVert(null); setCamp(null); setStack([]); }
+    if (target === "vert") { setCamp(null); setStack([]); }
+    if (target === "camp") { setStack([]); }
+  };
+  const crumbBtn = (label: string, onClick?: () => void) =>
     onClick ? <button onClick={onClick} className="text-indigo-600 hover:underline">{label}</button> : <span className="text-slate-700">{label}</span>;
 
   return (
@@ -83,7 +96,7 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
           <h1 className="text-2xl font-semibold tracking-tight">Campaign Library</h1>
           <p className="text-sm text-slate-500 mt-1">Category › Vertical › Campaign › Folder, then the assets.</p>
         </div>
-        {level === "files" && canUpload && (
+        {inFolder && canUpload && (
           <button onClick={() => setShowUpload(true)} className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
             Upload files
           </button>
@@ -92,48 +105,55 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
 
       {/* Breadcrumb */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        {crumb("All", cat ? () => { setCat(null); setVert(null); setCamp(null); setFolder(null); } : undefined)}
-        {cat && <><span className="text-slate-300">›</span>{crumb(cat.name, vert ? () => { setVert(null); setCamp(null); setFolder(null); } : undefined)}</>}
-        {vert && <><span className="text-slate-300">›</span>{crumb(vert.name, camp ? () => { setCamp(null); setFolder(null); } : undefined)}</>}
-        {camp && <><span className="text-slate-300">›</span>{crumb(camp.name, folder ? () => setFolder(null) : undefined)}</>}
-        {folder && <><span className="text-slate-300">›</span>{crumb(folder.name)}</>}
+        {crumbBtn("All", cat ? () => resetTo("all") : undefined)}
+        {cat && <><span className="text-slate-300">›</span>{crumbBtn(cat.name, vert ? () => resetTo("cat") : undefined)}</>}
+        {vert && <><span className="text-slate-300">›</span>{crumbBtn(vert.name, camp ? () => resetTo("vert") : undefined)}</>}
+        {camp && <><span className="text-slate-300">›</span>{crumbBtn(camp.name, stack.length ? () => resetTo("camp") : undefined)}</>}
+        {stack.map((s, i) => (
+          <span key={s.id} className="flex items-center gap-2">
+            <span className="text-slate-300">›</span>
+            {crumbBtn(s.name, i < stack.length - 1 ? () => setStack(stack.slice(0, i + 1)) : undefined)}
+          </span>
+        ))}
       </div>
 
       {loading ? (
         <p className="text-sm text-slate-400">Loading…</p>
-      ) : level === "files" ? (
-        files.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-            No files in this folder yet.{canUpload && " Use “Upload files” above."}
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <ul className="divide-y divide-slate-50">
-              {files.map((f) => (
-                <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
-                  <Link href={`/files/${f.id}`} className="flex min-w-0 items-center gap-3">
-                    <span className="text-lg">{iconFor(f.extension)}</span>
-                    <span className="truncate font-medium text-slate-800 hover:text-indigo-600">{f.name}</span>
-                  </Link>
-                  <div className="flex shrink-0 items-center gap-4 text-xs text-slate-400">
-                    <span>{fmtBytes(f.size_bytes)}</span>
-                    <a href={`/api/download/${f.id}`} className="rounded-md border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100">Download</a>
-                  </div>
-                </li>
+      ) : level === "folders" ? (
+        <div className="space-y-4">
+          {folders.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {folders.map((f) => (
+                <Card key={f.id} title={f.name} emoji={folderEmoji(f.name)} onClick={() => setStack([...stack, { id: f.id, name: f.name }])} />
               ))}
-            </ul>
-          </div>
-        )
-      ) : level === "folder" ? (
-        folders.length === 0 ? (
-          <p className="text-sm text-slate-400">No folders in this campaign yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {folders.map((f) => (
-              <Card key={f.id} title={f.name} emoji={folderEmoji(f.name)} onClick={() => setFolder({ id: f.id, name: f.name })} />
-            ))}
-          </div>
-        )
+            </div>
+          )}
+          {inFolder && (
+            files.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <ul className="divide-y divide-slate-50">
+                  {files.map((f) => (
+                    <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
+                      <Link href={`/files/${f.id}`} className="flex min-w-0 items-center gap-3">
+                        <span className="text-lg">{iconFor(f.extension)}</span>
+                        <span className="truncate font-medium text-slate-800 hover:text-indigo-600">{f.name}</span>
+                      </Link>
+                      <div className="flex shrink-0 items-center gap-4 text-xs text-slate-400">
+                        <span>{fmtBytes(f.size_bytes)}</span>
+                        <a href={`/api/download/${f.id}`} className="rounded-md border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100">Download</a>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : folders.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
+                This folder is empty.{canUpload && " Use “Upload files” above."}
+              </div>
+            ) : null
+          )}
+          {!inFolder && folders.length === 0 && <p className="text-sm text-slate-400">No folders in this campaign yet.</p>}
+        </div>
       ) : rows.length === 0 ? (
         <p className="text-sm text-slate-400">
           {level === "category" ? "No categories yet — create them in Campaign management." : `No ${level}s here yet.`}
@@ -156,7 +176,7 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
         </div>
       )}
 
-      {showUpload && folder && canUpload && (
+      {showUpload && current && canUpload && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 overflow-y-auto" onClick={() => setShowUpload(false)}>
           <div className="mt-16 w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
@@ -166,10 +186,10 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
             <div className="p-6">
               <UploadPanel
                 preset={{
-                  folderId: folder.id,
+                  folderId: current.id,
                   campaignId: camp?.id ?? null,
                   verticalId: vert?.id ?? null,
-                  destinationLabel: [vert?.name, camp?.name, folder.name].filter(Boolean).join(" › "),
+                  destinationLabel: [vert?.name, camp?.name, ...stack.map((s) => s.name)].filter(Boolean).join(" › "),
                 }}
                 onDone={load}
               />

@@ -21,6 +21,12 @@ export function UploadPanel({ onDone, preset }: {
 }) {
   const compact = !!preset;
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  // webkitdirectory/directory aren't in the React input typings; set them imperatively.
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); }
+  }, []);
   const [items, setItems] = useState<Record<string, Item>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -58,11 +64,12 @@ export function UploadPanel({ onDone, preset }: {
   const update = (name: string, patch: Partial<Item>) =>
     setItems((s) => ({ ...s, [name]: { ...(s[name] ?? { name, progress: 0, status: "", done: false }), ...patch } }));
 
-  async function uploadOne(file: File) {
-    update(file.name, { name: file.name, progress: 0, status: "Hashing…", done: false });
+  async function uploadOne(file: File, overrideFolderId?: string, label?: string) {
+    const key = label || file.name;
+    update(key, { name: key, progress: 0, status: "Hashing…", done: false });
     const sha = await sha256Hex(file);
 
-    update(file.name, { status: "Preparing…" });
+    update(key, { status: "Preparing…" });
     const presignRes = await fetch("/api/upload/presign", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -71,7 +78,7 @@ export function UploadPanel({ onDone, preset }: {
         sizeBytes: file.size,
         description,
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        folderId: folderId || null,
+        folderId: overrideFolderId ?? (folderId || null),
         categoryId: categoryId || null,
         verticalId: verticalId || null,
         campaignId: campaignId || null,
@@ -81,18 +88,18 @@ export function UploadPanel({ onDone, preset }: {
       }),
     });
     const presign = await presignRes.json();
-    if (!presignRes.ok) return update(file.name, { status: presign.error || "Failed" });
+    if (!presignRes.ok) return update(key, { status: presign.error || "Failed" });
 
     if (presign.duplicate && !confirm(`"${presign.duplicate.name}" already exists (same content). Upload anyway?`)) {
-      return update(file.name, { status: "Skipped (duplicate)" });
+      return update(key, { status: "Skipped (duplicate)" });
     }
 
-    update(file.name, { status: "Uploading…" });
+    update(key, { status: "Uploading…" });
     const result = await new Promise<{ ok: boolean; status: number; body: string }>((resolve) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", presign.presigned.url);
       xhr.setRequestHeader("Content-Type", presign.presigned.headers["Content-Type"]);
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(file.name, { progress: Math.round((e.loaded / e.total) * 100) }); };
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(key, { progress: Math.round((e.loaded / e.total) * 100) }); };
       xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: (xhr.responseText || "").slice(0, 300) });
       xhr.onerror = () => resolve({ ok: false, status: 0, body: "" }); // CORS/network → status 0
       xhr.send(file);
@@ -103,22 +110,100 @@ export function UploadPanel({ onDone, preset }: {
           ? "Blocked by CORS/network (status 0)"
           : `Storage rejected upload — HTTP ${result.status}${result.body ? ": " + result.body.replace(/<[^>]+>/g, " ").trim().slice(0, 160) : ""}`;
       console.error("Upload failed:", result.status, result.body);
-      return update(file.name, { status: msg });
+      return update(key, { status: msg });
     }
 
-    update(file.name, { status: "Finalizing…" });
+    update(key, { status: "Finalizing…" });
     const complete = await fetch("/api/upload/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fileId: presign.fileId }),
     });
-    if (!complete.ok) { const j = await complete.json(); return update(file.name, { status: j.error || "Failed" }); }
-    update(file.name, { status: "Done", progress: 100, done: true });
+    if (!complete.ok) { const j = await complete.json(); return update(key, { status: j.error || "Failed" }); }
+    update(key, { status: "Done", progress: 100, done: true });
     onDone?.();
   }
 
+  // Ensure a nested folder path exists under the preset folder; returns the leaf id.
+  // Cached per batch; only used in compact (folder-scoped) uploads.
+  async function resolveFolder(dirPath: string[], cache: Map<string, string>): Promise<string> {
+    let parentId = preset!.folderId;
+    for (const seg of dirPath) {
+      const ck = `${parentId}/${seg}`;
+      const cached = cache.get(ck);
+      if (cached) { parentId = cached; continue; }
+      const children = await fetch(`/api/folders?parentId=${parentId}`).then((r) => r.json()).then((j) => j.folders ?? []);
+      let child = children.find((c: { name: string }) => c.name === seg);
+      if (!child) {
+        const res = await fetch("/api/folders", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: seg, parentId, campaignId: preset!.campaignId ?? undefined }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to create subfolder");
+        child = (await res.json()).folder;
+      }
+      cache.set(ck, child.id);
+      parentId = child.id;
+    }
+    return parentId;
+  }
+
+  // Upload a batch of files, each carrying its subfolder path (empty = the target folder).
+  async function uploadBatch(items: { file: File; dirPath: string[] }[]) {
+    const cache = new Map<string, string>();
+    for (const { file, dirPath } of items) {
+      let target = overrideBase();
+      let label = file.name;
+      if (compact && dirPath.length) {
+        label = [...dirPath, file.name].join("/");
+        update(label, { name: label, progress: 0, status: "Creating folder…", done: false });
+        try { target = await resolveFolder(dirPath, cache); }
+        catch (e) { update(label, { status: (e as Error).message }); continue; }
+      }
+      await uploadOne(file, target, label);
+    }
+  }
+  const overrideBase = () => (compact ? preset!.folderId : (folderId || undefined));
+
   async function handleFiles(files: FileList | null) {
     if (!files) return;
-    for (const f of Array.from(files)) await uploadOne(f);
+    // webkitRelativePath is set when a directory was chosen ("Root/sub/file.ext").
+    const items = Array.from(files).map((f) => {
+      const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || "";
+      const parts = rel ? rel.split("/") : [];
+      return { file: f, dirPath: parts.length > 1 ? parts.slice(0, -1) : [] };
+    });
+    await uploadBatch(items);
+  }
+
+  // Recursively read dropped items so whole folders (incl. subfolders) upload.
+  async function handleDrop(dt: DataTransfer) {
+    const entries: FileSystemEntry[] = [];
+    const list = dt.items;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i].webkitGetAsEntry?.();
+      if (e) entries.push(e);
+    }
+    if (!entries.length) return handleFiles(dt.files);
+
+    const items: { file: File; dirPath: string[] }[] = [];
+    const readEntry = (entry: FileSystemEntry, dirPath: string[]): Promise<void> =>
+      new Promise((resolve) => {
+        if (entry.isFile) {
+          (entry as FileSystemFileEntry).file((f) => { items.push({ file: f, dirPath }); resolve(); });
+        } else if (entry.isDirectory) {
+          const reader = (entry as FileSystemDirectoryEntry).createReader();
+          const all: FileSystemEntry[] = [];
+          const readBatch = () => reader.readEntries(async (batch) => {
+            if (!batch.length) {
+              for (const child of all) await readEntry(child, [...dirPath, entry.name]);
+              resolve();
+            } else { all.push(...batch); readBatch(); }
+          });
+          readBatch();
+        } else resolve();
+      });
+    for (const e of entries) await readEntry(e, []);
+    await uploadBatch(items);
   }
 
   const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none";
@@ -192,15 +277,22 @@ export function UploadPanel({ onDone, preset }: {
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); handleDrop(e.dataTransfer); }}
         onClick={() => inputRef.current?.click()}
         className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center text-sm transition ${
           dragging ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-500 hover:border-indigo-400 hover:bg-slate-50"
         }`}
       >
-        <div className="font-medium text-slate-700">Drag & drop files here</div>
-        <div className="text-slate-400 mt-1">or click to browse — large files upload directly to storage</div>
+        <div className="font-medium text-slate-700">Drag &amp; drop files or a whole folder here</div>
+        <div className="text-slate-400 mt-1">Any file type — images, video, audio, PDF, docs, ZIP, and more. Large files upload directly to storage.</div>
+        <div className="mt-3 flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={() => inputRef.current?.click()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Browse files</button>
+          <button type="button" onClick={() => folderInputRef.current?.click()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Upload a folder</button>
+        </div>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        <input ref={folderInputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       </div>
 
       {Object.values(items).length > 0 && (
