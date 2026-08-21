@@ -11,7 +11,8 @@ export function SidebarNav({ isAdmin, isSuper }: { isAdmin: boolean; isSuper: bo
   const path = usePathname();
   const main: { href: string; label: string; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", show: true },
-    { href: "/files", label: "Campaign Library", show: true },
+    { href: "/library", label: "Campaign Library", show: true },
+    { href: "/files", label: "Search", show: true },
   ];
   const admin: { href: string; label: string; show: boolean }[] = [
     { href: "/settings/campaigns", label: "Campaign management", show: isAdmin },

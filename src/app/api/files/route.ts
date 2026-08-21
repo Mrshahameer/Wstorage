@@ -12,6 +12,9 @@ export async function GET(req: NextRequest) {
 
     const q = searchParams.get("q")?.trim();
     const folderId = searchParams.get("folderId");
+    const campaignId = searchParams.get("campaignId");
+    const verticalId = searchParams.get("verticalId");
+    const resourceTypeId = searchParams.get("resourceTypeId");
     const sort = searchParams.get("sort") ?? "created_at";
     const dir = (searchParams.get("dir") ?? "desc") === "asc";
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
@@ -27,6 +30,9 @@ export async function GET(req: NextRequest) {
       query = query.or(`name.ilike.%${q}%,description.ilike.%${q}%,extension.ilike.%${q}%,tags.cs.{${q}}`);
     }
     if (folderId) query = query.eq("folder_id", folderId);
+    if (campaignId) query = query.eq("campaign_id", campaignId);
+    if (verticalId) query = query.eq("vertical_id", verticalId);
+    if (resourceTypeId) query = query.eq("resource_type_id", resourceTypeId);
 
     // Access control for non-admins: only granted folders + the shared (no-folder) pool.
     if (!isAdmin(user)) {

@@ -4,9 +4,10 @@
 > and what to do next. Full detail lives in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 > After finishing a task: tick its box, and add a dated line under **Session log**.
 
-- **Current phase:** Phase 2 in progress; Phase 3 (share links) DONE; upload taxonomy DONE
-- **Next task:** Build the **asset detail + preview page** (image/video/audio/pdf) and the
-  **card-based Campaign Library** browse IA (`/files` is still the old flat browser).
+- **Current phase:** Phase 2 nearly complete; Phase 3 DONE. Phase 4 next.
+- **Next task:** Expose the new filters in the Search UI (`/files` — vertical / campaign type /
+  resource type / buyer / date), then start Phase 4: **granular-permission grant UI** on the
+  Users & Access page, and the **analytics dashboard**.
 - **Last updated:** 2026-08-21
 - **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
   `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
@@ -34,9 +35,9 @@
 - [x] Taxonomy APIs: `/api/verticals`, `/api/campaign-types`, `/api/campaigns`, `/api/resource-types`, categories POST
 - [x] Rename **Files → Campaign Library** in nav + group admin links under "Administration"
 - [x] Upload flow: Vertical → Campaign → Resource Type selectors (writes denormalized fields via presign)
-- [ ] Card-based Campaign Library browse IA (`/files` still the old flat browser)
-- [ ] Asset detail page + preview (image / video / audio / pdf)
-- [ ] Extend search: vertical / campaign type / resource type / buyer / date filters
+- [x] Card-based Campaign Library browse IA (`/library`: Category › Vertical › Campaign › assets)
+- [x] Asset detail page + preview (`/files/[id]`: image / video / audio / pdf, metadata, versions, share)
+- [~] Extend search: files API now filters by campaignId/verticalId/resourceTypeId (backend done; Search UI filters pending)
 
 ## Phase 3 — Sharing  ✅ core done
 - [x] Migration: `share_links` + `share_link_resources`
@@ -69,6 +70,11 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
 
+- **2026-08-21 (session 4)** — Built the asset detail + inline preview page (image/video/audio/pdf,
+  metadata w/ embedded taxonomy names, versions, download/copy/share actions) and the card-based
+  Campaign Library (`/library`: Category › Vertical › Campaign › assets). Extended files API with
+  campaign/vertical/resource-type filters. Nav now: Dashboard · Campaign Library · Search. Verified
+  live (9 more checks: detail embeds + preview + library data flow) — 0 failures. Committed.
 - **2026-08-21 (session 3)** — Live-DB testing: applied migration 0006 to the real Supabase,
   ran 49 checks (HTTP probes + DB integration + authenticated E2E) — 0 failures, no broken
   endpoints. Wired Vertical/Campaign/Resource-Type selectors into the upload flow (presign now
