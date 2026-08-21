@@ -9,3 +9,5 @@ next-env.d.ts
 blackblaze data.md
 *.env*
 
+
+tsconfig.tsbuildinfo

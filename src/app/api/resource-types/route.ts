@@ -8,41 +8,34 @@ export async function GET() {
   try {
     await requireUser();
     const { data } = await supabaseAdmin()
-      .from("categories")
-      .select("id,name,icon,sort")
+      .from("resource_types")
+      .select("id,name,slug,icon,is_system,sort")
       .order("sort")
       .order("name");
-    return NextResponse.json({ categories: data ?? [] });
+    return NextResponse.json({ resourceTypes: data ?? [] });
   } catch (e) {
     return handleError(e);
   }
 }
 
-const CreateSchema = z.object({
-  name: z.string().min(1),
-  icon: z.string().optional(),
-  description: z.string().optional(),
-  sort: z.number().int().optional(),
-});
+const CreateSchema = z.object({ name: z.string().min(1), icon: z.string().optional() });
+
+function slugify(s: string) {
+  return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
 
 export async function POST(req: NextRequest) {
   try {
     const actor = await requireRole("admin");
     const body = CreateSchema.parse(await req.json());
     const { data, error } = await supabaseAdmin()
-      .from("categories")
-      .insert({
-        name: body.name,
-        icon: body.icon ?? null,
-        description: body.description ?? null,
-        sort: body.sort ?? 0,
-        created_by: actor.id,
-      })
+      .from("resource_types")
+      .insert({ name: body.name, slug: slugify(body.name), icon: body.icon ?? "file", is_system: false, sort: 500 })
       .select("id,name")
       .single();
     if (error) throw new Error(error.message);
-    await logActivity(actor.id, "category_created", { type: "category", id: data.id, detail: { name: body.name } });
-    return NextResponse.json({ category: data });
+    await logActivity(actor.id, "resource_type_created", { type: "resource_type", id: data.id, detail: { name: body.name } });
+    return NextResponse.json({ resourceType: data });
   } catch (e) {
     return handleError(e);
   }
