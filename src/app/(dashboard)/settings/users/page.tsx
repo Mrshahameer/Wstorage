@@ -6,5 +6,5 @@ export default async function UsersPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (user.role !== "admin" && user.role !== "super_admin") redirect("/dashboard");
-  return <UsersManager canManage={user.role === "super_admin"} />;
+  return <UsersManager canManage={user.role === "super_admin"} currentUserId={user.id} />;
 }
