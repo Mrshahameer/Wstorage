@@ -32,6 +32,7 @@ function kind(contentType: string | null, ext: string | null): "image" | "video"
 
 export function AssetDetail({ id, canShare }: { id: string; canShare: boolean }) {
   const router = useRouter();
+  // Back goes to the previous page (the folder in the library, search results, etc.).
   const goBack = () => {
     // Return to the exact place the user came from (the folder in the library,
     // the search results, etc.). Fall back to the library if there is no history.
