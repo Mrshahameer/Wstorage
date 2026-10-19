@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser, requireRole, logActivity } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
-import { isAdmin, grantedFolderIds } from "@/lib/access";
+import { isAdmin, grantedFolderIds, accessScope } from "@/lib/access";
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const campaignId = req.nextUrl.searchParams.get("campaignId");
     const parentId = req.nextUrl.searchParams.get("parentId");
+    const scope = req.nextUrl.searchParams.get("scope");
 
     let query = db
       .from("folders")
@@ -31,8 +32,20 @@ export async function GET(req: NextRequest) {
     // the campaign (files are separately access-gated by /api/files). The unscoped
     // list still respects legacy per-folder grants for employees.
     if (!isAdmin(user) && !campaignId && !parentId) {
-      const ids = new Set(await grantedFolderIds(user.id));
-      folders = folders.filter((f: { id: string }) => ids.has(f.id));
+      if (scope === "accessible") {
+        // Everything the user can reach: granted folders + folders under any
+        // campaign they can access (via category / vertical / campaign grants).
+        const s = await accessScope(user.id);
+        const campSet = new Set(s.campaignIds);
+        const folderSet = new Set(s.folderIds);
+        folders = folders.filter(
+          (f: { id: string; campaign_id: string | null }) =>
+            folderSet.has(f.id) || (f.campaign_id != null && campSet.has(f.campaign_id))
+        );
+      } else {
+        const ids = new Set(await grantedFolderIds(user.id));
+        folders = folders.filter((f: { id: string }) => ids.has(f.id));
+      }
     }
     return NextResponse.json({ folders });
   } catch (e) {

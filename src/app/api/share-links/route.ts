@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireRole, logActivity, AuthError } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
-import { isAdmin } from "@/lib/access";
+import { isAdmin, accessScope } from "@/lib/access";
 import { canShareResource } from "@/lib/permissions";
 import { generateToken, hashPassword } from "@/lib/share";
 
@@ -35,7 +35,7 @@ const CreateSchema = z.object({
   resources: z
     .array(
       z.object({
-        type: z.enum(["file", "folder", "campaign"]),
+        type: z.enum(["file", "folder", "campaign", "vertical", "category"]),
         id: z.string().uuid(),
       })
     )
@@ -47,14 +47,41 @@ export async function POST(req: NextRequest) {
     const actor = await requireRole("bd_manager");
     const body = CreateSchema.parse(await req.json());
     const db = supabaseAdmin();
+    const admin = isAdmin(actor);
+    const scope = admin ? null : await accessScope(actor.id);
+    const accCampaigns = scope ? new Set(scope.campaignIds) : null;
 
-    // Non-admins may share only resources they can access.
-    if (!isAdmin(actor)) {
-      for (const r of body.resources) {
-        const ok = await canShareResource(actor, r.type, r.id);
-        if (!ok) throw new AuthError(403, "You can only share resources you have access to.");
+    // The share_link_resources table stores only file/folder/campaign. A vertical
+    // or category is expanded here into the campaigns beneath it. Non-admins get
+    // only the parts they can access, so nothing is over-shared.
+    const final: { type: "file" | "folder" | "campaign"; id: string }[] = [];
+    const seen = new Set<string>();
+    const addCampaign = (id: string) => {
+      if (accCampaigns && !accCampaigns.has(id)) return;
+      const k = "campaign:" + id;
+      if (!seen.has(k)) { seen.add(k); final.push({ type: "campaign", id }); }
+    };
+    for (const r of body.resources) {
+      if (r.type === "campaign") {
+        addCampaign(r.id);
+      } else if (r.type === "vertical") {
+        const { data } = await db.from("campaigns").select("id").eq("vertical_id", r.id);
+        (data ?? []).forEach((c: { id: string }) => addCampaign(c.id));
+      } else if (r.type === "category") {
+        const { data: verts } = await db.from("verticals").select("id").eq("category_id", r.id);
+        for (const v of verts ?? []) {
+          const { data } = await db.from("campaigns").select("id").eq("vertical_id", v.id);
+          (data ?? []).forEach((c: { id: string }) => addCampaign(c.id));
+        }
+      } else {
+        // file or folder — keep as-is, but a non-admin must have access to it.
+        if (admin || (await canShareResource(actor, r.type, r.id))) {
+          const k = r.type + ":" + r.id;
+          if (!seen.has(k)) { seen.add(k); final.push({ type: r.type, id: r.id }); }
+        }
       }
     }
+    if (!final.length) throw new AuthError(400, "Nothing to share — pick a resource you have access to.");
 
     const token = generateToken();
 
@@ -74,7 +101,7 @@ export async function POST(req: NextRequest) {
       .single();
     if (error) throw new Error(error.message);
 
-    const rows = body.resources.map((r) => ({
+    const rows = final.map((r) => ({
       share_link_id: link.id,
       resource_type: r.type,
       resource_id: r.id,
