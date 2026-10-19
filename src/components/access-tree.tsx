@@ -1,13 +1,26 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Category = { id: string; name: string };
 type Vertical = { id: string; category_id: string; name: string };
 type Campaign = { id: string; vertical_id: string; name: string; buyer: string | null };
-type Folder = { id: string; name: string; path: string };
+type Folder = { id: string; name: string; path: string; parent_id: string | null; campaign_id: string | null };
 type NodeKey = string; // `${type}:${id}`
 
 const key = (type: string, id: string): NodeKey => `${type}:${id}`;
+
+// One tri-state checkbox: checked (explicit), inherited (an ancestor is checked), or
+// indeterminate (some descendants are checked). Inherited rows are shown ticked and locked.
+function TriCheck({ checked, inherited, partial, onChange }: {
+  checked: boolean; inherited: boolean; partial: boolean; onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (ref.current) ref.current.indeterminate = partial && !checked && !inherited; }, [partial, checked, inherited]);
+  return (
+    <input ref={ref} type="checkbox" checked={checked || inherited} disabled={inherited}
+      onChange={onChange} className={"rounded " + (inherited ? "opacity-50" : "")} />
+  );
+}
 
 export function AccessTree({ userId, email, onClose, onSaved }: {
   userId: string; email: string; onClose: () => void; onSaved: () => void;
@@ -17,8 +30,7 @@ export function AccessTree({ userId, email, onClose, onSaved }: {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [checked, setChecked] = useState<Set<NodeKey>>(new Set());
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
-  const [openVerts, setOpenVerts] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<Set<NodeKey>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -38,10 +50,66 @@ export function AccessTree({ userId, email, onClose, onSaved }: {
   }, [userId]);
   useEffect(() => { load(); }, [load]);
 
-  const toggle = (k: NodeKey) => setChecked((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const isOn = (k: NodeKey) => checked.has(k);
-  const toggleOpen = (set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
-    set((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // ---- tree structure -------------------------------------------------------------
+  const tree = useMemo(() => {
+    const vertsByCat = new Map<string, Vertical[]>();
+    verticals.forEach((v) => vertsByCat.set(v.category_id, [...(vertsByCat.get(v.category_id) ?? []), v]));
+    const campsByVert = new Map<string, Campaign[]>();
+    campaigns.forEach((c) => campsByVert.set(c.vertical_id, [...(campsByVert.get(c.vertical_id) ?? []), c]));
+    const topFoldersByCamp = new Map<string, Folder[]>();
+    const subFolders = new Map<string, Folder[]>();
+    const orphan: Folder[] = [];
+    const ids = new Set(folders.map((f) => f.id));
+    folders.forEach((f) => {
+      if (f.parent_id && ids.has(f.parent_id)) subFolders.set(f.parent_id, [...(subFolders.get(f.parent_id) ?? []), f]);
+      else if (f.campaign_id) topFoldersByCamp.set(f.campaign_id, [...(topFoldersByCamp.get(f.campaign_id) ?? []), f]);
+      else orphan.push(f);
+    });
+    // child keys for every node, plus the parent of every node
+    const children = new Map<NodeKey, NodeKey[]>();
+    const parent = new Map<NodeKey, NodeKey>();
+    const link = (p: NodeKey, c: NodeKey) => { children.set(p, [...(children.get(p) ?? []), c]); parent.set(c, p); };
+    categories.forEach((c) => (vertsByCat.get(c.id) ?? []).forEach((v) => {
+      link(key("category", c.id), key("vertical", v.id));
+      (campsByVert.get(v.id) ?? []).forEach((cp) => {
+        link(key("vertical", v.id), key("campaign", cp.id));
+        (topFoldersByCamp.get(cp.id) ?? []).forEach((f) => link(key("campaign", cp.id), key("folder", f.id)));
+      });
+    }));
+    folders.forEach((f) => { if (f.parent_id && ids.has(f.parent_id)) link(key("folder", f.parent_id), key("folder", f.id)); });
+    return { vertsByCat, campsByVert, topFoldersByCamp, subFolders, orphan, children, parent };
+  }, [categories, verticals, campaigns, folders]);
+
+  const descendants = useCallback((k: NodeKey): NodeKey[] => {
+    const out: NodeKey[] = []; const stack = [...(tree.children.get(k) ?? [])];
+    while (stack.length) { const n = stack.pop()!; out.push(n); stack.push(...(tree.children.get(n) ?? [])); }
+    return out;
+  }, [tree]);
+  const inheritedFrom = (k: NodeKey) => {
+    let p = tree.parent.get(k);
+    while (p) { if (checked.has(p)) return true; p = tree.parent.get(p); }
+    return false;
+  };
+  const hasCheckedBelow = (k: NodeKey) => descendants(k).some((d) => checked.has(d));
+
+  // open the branches that already hold grants
+  useEffect(() => {
+    if (loading) return;
+    const o = new Set<NodeKey>();
+    checked.forEach((k) => { let p = tree.parent.get(k); while (p) { o.add(p); p = tree.parent.get(p); } });
+    setOpen(o);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  const toggleOpen = (k: NodeKey) => setOpen((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggle = (k: NodeKey) => setChecked((s) => {
+    const n = new Set(s);
+    if (n.has(k)) n.delete(k);
+    else { n.add(k); descendants(k).forEach((d) => n.delete(d)); } // one check covers everything below it
+    return n;
+  });
+  const expandAll = () => setOpen(new Set(Array.from(tree.children.keys())));
+  const collapseAll = () => setOpen(new Set());
 
   async function save() {
     setSaving(true); setError("");
@@ -52,14 +120,34 @@ export function AccessTree({ userId, email, onClose, onSaved }: {
     onSaved(); onClose();
   }
 
-  const Check = ({ k, label, sub }: { k: NodeKey; label: string; sub?: string }) => (
-    <label className="flex items-center gap-2 text-sm py-0.5">
-      <input type="checkbox" checked={isOn(k)} onChange={() => toggle(k)} className="rounded" />
-      <span className="text-slate-700">{label}</span>
-      {sub && <span className="text-xs text-slate-400">{sub}</span>}
-    </label>
-  );
-  const caret = (open: boolean) => <span className="inline-block w-4 text-slate-400">{open ? "▾" : "▸"}</span>;
+  // ---- rendering ------------------------------------------------------------------
+  const Row = ({ k, label, sub, hint, expandable }: { k: NodeKey; label: string; sub?: string; hint?: string; expandable: boolean }) => {
+    const inh = inheritedFrom(k);
+    return (
+      <div className="flex items-center gap-1 py-0.5">
+        {expandable
+          ? <button type="button" onClick={() => toggleOpen(k)} className="inline-block w-4 text-slate-400">{open.has(k) ? "▾" : "▸"}</button>
+          : <span className="inline-block w-4" />}
+        <label className="flex items-center gap-2 text-sm">
+          <TriCheck checked={checked.has(k)} inherited={inh} partial={hasCheckedBelow(k)} onChange={() => toggle(k)} />
+          <span className="text-slate-700">{label}</span>
+          {sub && <span className="text-xs text-slate-400">{sub}</span>}
+          {hint && !inh && <span className="text-[10px] uppercase tracking-wide text-indigo-400">{hint}</span>}
+          {inh && <span className="text-[10px] uppercase tracking-wide text-slate-300">included</span>}
+        </label>
+      </div>
+    );
+  };
+  const Indent = ({ children }: { children: React.ReactNode }) => <div className="ml-5 border-l border-slate-100 pl-3">{children}</div>;
+  const FolderNode = ({ f }: { f: Folder }) => {
+    const k = key("folder", f.id); const subs = tree.subFolders.get(f.id) ?? [];
+    return (
+      <div>
+        <Row k={k} label={f.name} expandable={subs.length > 0} />
+        {open.has(k) && subs.length > 0 && <Indent>{subs.map((s) => <FolderNode key={s.id} f={s} />)}</Indent>}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 overflow-y-auto" onClick={onClose}>
@@ -75,58 +163,58 @@ export function AccessTree({ userId, email, onClose, onSaved }: {
         <div className="max-h-[60vh] overflow-y-auto p-6">
           {loading ? <p className="text-sm text-slate-400">Loading…</p> : (
             <>
-              <p className="text-xs text-slate-500 mb-3">
-                Check any level to grant view + download. Grants inherit downward (check a vertical → its campaigns come with it).
+              <p className="text-xs text-slate-500 mb-2">
+                One check gives everything below it: a <b>category</b> gives all its verticals, a <b>vertical</b> gives all its campaign types,
+                a <b>campaign type</b> gives all its folders. Open a branch to pick single folders instead.
               </p>
-              {/* Category tree */}
-              <div className="space-y-1">
+              <div className="mb-3 flex gap-3 text-xs">
+                <button type="button" onClick={expandAll} className="text-indigo-600 hover:underline">Expand all</button>
+                <button type="button" onClick={collapseAll} className="text-indigo-600 hover:underline">Collapse all</button>
+              </div>
+              <div className="space-y-0.5">
                 {categories.map((c) => {
-                  const catOpen = openCats.has(c.id);
-                  const verts = verticals.filter((v) => v.category_id === c.id);
+                  const ck = key("category", c.id); const verts = tree.vertsByCat.get(c.id) ?? [];
                   return (
                     <div key={c.id}>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => toggleOpen(setOpenCats, c.id)}>{caret(catOpen)}</button>
-                        <Check k={key("category", c.id)} label={c.name} />
-                      </div>
-                      {catOpen && (
-                        <div className="ml-6 border-l border-slate-100 pl-3">
+                      <Row k={ck} label={c.name} hint="full category" expandable />
+                      {open.has(ck) && (
+                        <Indent>
                           {verts.length === 0 && <p className="text-xs text-slate-400 py-1">No verticals.</p>}
                           {verts.map((v) => {
-                            const vOpen = openVerts.has(v.id);
-                            const camps = campaigns.filter((cp) => cp.vertical_id === v.id);
+                            const vk = key("vertical", v.id); const camps = tree.campsByVert.get(v.id) ?? [];
                             return (
                               <div key={v.id}>
-                                <div className="flex items-center gap-1">
-                                  <button onClick={() => toggleOpen(setOpenVerts, v.id)}>{caret(vOpen)}</button>
-                                  <Check k={key("vertical", v.id)} label={v.name} />
-                                </div>
-                                {vOpen && (
-                                  <div className="ml-6 border-l border-slate-100 pl-3">
+                                <Row k={vk} label={v.name} hint="full vertical" expandable />
+                                {open.has(vk) && (
+                                  <Indent>
                                     {camps.length === 0 && <p className="text-xs text-slate-400 py-1">No campaigns.</p>}
-                                    {camps.map((cp) => (
-                                      <Check key={cp.id} k={key("campaign", cp.id)} label={cp.name} sub={cp.buyer || undefined} />
-                                    ))}
-                                  </div>
+                                    {camps.map((cp) => {
+                                      const pk = key("campaign", cp.id); const fl = tree.topFoldersByCamp.get(cp.id) ?? [];
+                                      return (
+                                        <div key={cp.id}>
+                                          <Row k={pk} label={cp.name} sub={cp.buyer || undefined} hint="full campaign" expandable={fl.length > 0} />
+                                          {open.has(pk) && fl.length > 0 && <Indent>{fl.map((f) => <FolderNode key={f.id} f={f} />)}</Indent>}
+                                        </div>
+                                      );
+                                    })}
+                                  </Indent>
                                 )}
                               </div>
                             );
                           })}
-                        </div>
+                        </Indent>
                       )}
                     </div>
                   );
                 })}
-                {categories.length === 0 && <p className="text-xs text-slate-400">No categories — create them in Campaign management.</p>}
+                {categories.length === 0 && <p className="text-xs text-slate-400">No categories. Create them in Campaign management.</p>}
               </div>
 
-              {/* Folders */}
-              {folders.length > 0 && (
+              {/* Folders that belong to no campaign (older folders) */}
+              {tree.orphan.length > 0 && (
                 <div className="mt-5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Folders</h3>
-                  <div className="space-y-0.5">
-                    {folders.map((f) => <Check key={f.id} k={key("folder", f.id)} label={f.path || f.name} />)}
-                  </div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Other folders</h3>
+                  {tree.orphan.map((f) => <Row key={f.id} k={key("folder", f.id)} label={f.path || f.name} expandable={false} />)}
                 </div>
               )}
               {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
