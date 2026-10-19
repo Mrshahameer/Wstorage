@@ -11,7 +11,7 @@
 // SERVER ONLY — uses the service-role client.
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { SessionUser } from "@/lib/auth";
-import { isAdmin } from "@/lib/access";
+import { isAdmin, accessScope } from "@/lib/access";
 
 export type Action =
   | "view"
@@ -185,6 +185,49 @@ export async function canFolder(user: SessionUser, action: Action, folderId: str
   if (action === "view" || action === "download") {
     return legacyCanView(user, chain);
   }
+  return false;
+}
+
+/**
+ * Can this user put a resource into a share link? Admins may share anything.
+ * A non-admin may share only what they can already access, using the same scope
+ * the files listing uses (folder / campaign / vertical / category grants, with
+ * inheritance). Folders with no campaign in scope, and files outside the scope,
+ * are refused so a lower role cannot share what it cannot see.
+ */
+export async function canShareResource(
+  user: SessionUser,
+  type: "file" | "folder" | "campaign",
+  id: string
+): Promise<boolean> {
+  if (isAdmin(user)) return true;
+  const db = supabaseAdmin();
+  const scope = await accessScope(user.id);
+  const folders = new Set(scope.folderIds);
+  const campaigns = new Set(scope.campaignIds);
+  const verticals = new Set(scope.verticalIds);
+  const categories = new Set(scope.categoryIds);
+
+  if (type === "campaign") return campaigns.has(id);
+
+  if (type === "folder") {
+    if (folders.has(id)) return true;
+    const { data: f } = await db.from("folders").select("campaign_id").eq("id", id).single();
+    return !!(f?.campaign_id && campaigns.has(f.campaign_id));
+  }
+
+  // file: mirror the OR logic in /api/files
+  const { data: file } = await db
+    .from("files")
+    .select("folder_id,campaign_id,vertical_id,category_id")
+    .eq("id", id)
+    .single();
+  if (!file) return false;
+  if (!file.folder_id) return true; // shared pool
+  if (folders.has(file.folder_id)) return true;
+  if (file.campaign_id && campaigns.has(file.campaign_id)) return true;
+  if (file.vertical_id && verticals.has(file.vertical_id)) return true;
+  if (file.category_id && categories.has(file.category_id)) return true;
   return false;
 }
 

@@ -7,7 +7,7 @@ const item = (active: boolean) =>
     active ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
   }`;
 
-export function SidebarNav({ isAdmin, isSuper }: { isAdmin: boolean; isSuper: boolean }) {
+export function SidebarNav({ isAdmin, isSuper, canShare }: { isAdmin: boolean; isSuper: boolean; canShare: boolean }) {
   const path = usePathname();
   const main: { href: string; label: string; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", show: true },
@@ -21,7 +21,7 @@ export function SidebarNav({ isAdmin, isSuper }: { isAdmin: boolean; isSuper: bo
     { href: "/settings/folders", label: "Folders", show: isAdmin },
     { href: "/settings/users", label: "Users & access", show: isAdmin },
     { href: "/settings/roles", label: "Roles & permissions", show: isAdmin },
-    { href: "/settings/share-links", label: "Share links", show: isAdmin },
+    { href: "/settings/share-links", label: "Share links", show: canShare },
     { href: "/settings/activity", label: "Activity logs", show: isSuper },
     { href: "/settings/storage-keys", label: "Storage keys", show: isAdmin },
   ];

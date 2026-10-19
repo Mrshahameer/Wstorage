@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole, logActivity } from "@/lib/auth";
+import { requireRole, logActivity, AuthError } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
+import { isAdmin } from "@/lib/access";
+import { canShareResource } from "@/lib/permissions";
 import { generateToken, hashPassword } from "@/lib/share";
 
 export async function GET() {
   try {
-    await requireRole("admin");
-    const { data } = await supabaseAdmin()
+    const user = await requireRole("bd_manager");
+    let q = supabaseAdmin()
       .from("share_links")
       .select(
         "id,token,name,allow_download,allow_preview,expires_at,max_downloads,current_downloads,status,created_at"
       )
       .order("created_at", { ascending: false });
+    // Non-admins see only the links they created.
+    if (!isAdmin(user)) q = q.eq("created_by", user.id);
+    const { data } = await q;
     return NextResponse.json({ shareLinks: data ?? [] });
   } catch (e) {
     return handleError(e);
@@ -39,9 +44,18 @@ const CreateSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireRole("admin");
+    const actor = await requireRole("bd_manager");
     const body = CreateSchema.parse(await req.json());
     const db = supabaseAdmin();
+
+    // Non-admins may share only resources they can access.
+    if (!isAdmin(actor)) {
+      for (const r of body.resources) {
+        const ok = await canShareResource(actor, r.type, r.id);
+        if (!ok) throw new AuthError(403, "You can only share resources you have access to.");
+      }
+    }
+
     const token = generateToken();
 
     const { data: link, error } = await db
