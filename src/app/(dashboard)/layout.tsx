@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, roleAtLeast } from "@/lib/auth";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -9,6 +9,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect("/login");
   const isAdmin = user.role === "admin" || user.role === "super_admin";
   const isSuper = user.role === "super_admin";
+  const canShare = roleAtLeast(user.role, "bd_manager");
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -18,7 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <div className="h-7 w-7 rounded-md bg-indigo-500 grid place-items-center text-white font-bold text-sm">W</div>
             <span className="text-white font-semibold tracking-tight">Wstorage</span>
           </div>
-          <SidebarNav isAdmin={isAdmin} isSuper={isSuper} />
+          <SidebarNav isAdmin={isAdmin} isSuper={isSuper} canShare={canShare} />
         </div>
         <div className="px-5 py-4 border-t border-slate-800">
           <div className="text-sm text-slate-200 truncate">{user.email}</div>
