@@ -13,8 +13,9 @@ interface ShareLink {
   created_at: string;
 }
 interface Folder { id: string; name: string; path: string }
-interface Campaign { id: string; name: string; buyer: string | null }
-interface Vertical { id: string; name: string }
+interface Campaign { id: string; name: string; buyer: string | null; vertical_id: string }
+interface Vertical { id: string; name: string; category_id: string }
+interface Category { id: string; name: string }
 
 const card = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4";
 const input = "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500";
@@ -24,14 +25,17 @@ export default function ShareLinksPage() {
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [verticals, setVerticals] = useState<Vertical[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<string | null>(null);
 
   // form
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<"folder" | "campaign">("folder");
+  const [kind, setKind] = useState<"category" | "vertical" | "campaign" | "folder">("campaign");
   const [folderId, setFolderId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [verticalId, setVerticalId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [password, setPassword] = useState("");
@@ -40,24 +44,42 @@ export default function ShareLinksPage() {
 
   const j = async (u: string) => (await fetch(u)).json();
   const load = useCallback(async () => {
-    const [l, f, v] = await Promise.all([j("/api/share-links"), j("/api/folders"), j("/api/verticals")]);
+    const [l, f, v, c, cat] = await Promise.all([
+      j("/api/share-links"),
+      j("/api/folders?scope=accessible"),
+      j("/api/verticals"),
+      j("/api/campaigns?scope=accessible"),
+      j("/api/categories"),
+    ]);
     setLinks(l.shareLinks ?? []);
     setFolders(f.folders ?? []);
-    setVerticals(v.verticals ?? []);
+    const camps: Campaign[] = c.campaigns ?? [];
+    setAllCampaigns(camps);
+    // Only show verticals and categories that actually contain something the
+    // user can share.
+    const vIds = new Set(camps.map((x) => x.vertical_id));
+    const accVerts: Vertical[] = (v.verticals ?? []).filter((vt: Vertical) => vIds.has(vt.id));
+    setVerticals(accVerts);
+    const catIds = new Set(accVerts.map((vt) => vt.category_id));
+    setCategories((cat.categories ?? []).filter((ct: Category) => catIds.has(ct.id)));
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Campaigns for the chosen vertical, drawn from the accessible set.
   useEffect(() => {
-    if (!verticalId) return setCampaigns([]);
-    j(`/api/campaigns?verticalId=${verticalId}`).then((c) => setCampaigns(c.campaigns ?? []));
+    setCampaigns(verticalId ? allCampaigns.filter((c) => c.vertical_id === verticalId) : []);
     setCampaignId("");
-  }, [verticalId]);
+  }, [verticalId, allCampaigns]);
 
   async function create() {
     setError("");
     setCreated(null);
-    const resource = kind === "folder" ? { type: "folder", id: folderId } : { type: "campaign", id: campaignId };
-    if (!resource.id) return setError("Pick a resource to share.");
+    const id =
+      kind === "category" ? categoryId :
+      kind === "vertical" ? verticalId :
+      kind === "campaign" ? campaignId : folderId;
+    if (!id) return setError("Pick a resource to share.");
+    const resource = { type: kind, id };
     const res = await fetch("/api/share-links", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -98,17 +120,30 @@ export default function ShareLinksPage() {
       <div className={card}>
         <h2 className="text-sm font-semibold text-slate-800">Create a share link</h2>
         <input className={`${input} w-full`} placeholder="Link name (e.g. Auto Insurance Inbound Package)" value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="flex gap-2 text-sm">
-          <button onClick={() => setKind("folder")} className={`rounded-lg px-3 py-1.5 ${kind === "folder" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}>Share a folder</button>
-          <button onClick={() => setKind("campaign")} className={`rounded-lg px-3 py-1.5 ${kind === "campaign" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}>Share a campaign</button>
+        <div className="flex flex-wrap gap-2 text-sm">
+          {(["category", "vertical", "campaign", "folder"] as const).map((k) => (
+            <button key={k} onClick={() => setKind(k)} className={`rounded-lg px-3 py-1.5 capitalize ${kind === k ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+              {k}
+            </button>
+          ))}
         </div>
+        <p className="text-xs text-slate-500">
+          Sharing a {kind} includes everything inside it. A category shares all its verticals and campaigns, a vertical shares all its campaigns, a folder shares its files.
+        </p>
 
-        {kind === "folder" ? (
-          <select className={`${input} w-full`} value={folderId} onChange={(e) => setFolderId(e.target.value)}>
-            <option value="">Select a folder…</option>
-            {folders.map((f) => <option key={f.id} value={f.id}>{f.path || f.name}</option>)}
+        {kind === "category" && (
+          <select className={`${input} w-full`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="">Select a category…</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-        ) : (
+        )}
+        {kind === "vertical" && (
+          <select className={`${input} w-full`} value={verticalId} onChange={(e) => setVerticalId(e.target.value)}>
+            <option value="">Select a vertical…</option>
+            {verticals.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        )}
+        {kind === "campaign" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <select className={input} value={verticalId} onChange={(e) => setVerticalId(e.target.value)}>
               <option value="">Select a vertical…</option>
@@ -119,6 +154,12 @@ export default function ShareLinksPage() {
               {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}{c.buyer ? ` · ${c.buyer}` : ""}</option>)}
             </select>
           </div>
+        )}
+        {kind === "folder" && (
+          <select className={`${input} w-full`} value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+            <option value="">Select a folder…</option>
+            {folders.map((f) => <option key={f.id} value={f.id}>{f.path || f.name}</option>)}
+          </select>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 interface Rel { name: string }
@@ -31,6 +31,13 @@ function kind(contentType: string | null, ext: string | null): "image" | "video"
 }
 
 export function AssetDetail({ id, canShare }: { id: string; canShare: boolean }) {
+  const router = useRouter();
+  const goBack = () => {
+    // Return to the exact place the user came from (the folder in the library,
+    // the search results, etc.). Fall back to the library if there is no history.
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push("/library");
+  };
   const [file, setFile] = useState<FileDetail | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -66,7 +73,7 @@ export function AssetDetail({ id, canShare }: { id: string; canShare: boolean })
   if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
   if (error && !file) return (
     <div className="space-y-4">
-      <Link href="/files" className="text-sm text-indigo-600 hover:underline">← Back to Campaign Library</Link>
+      <button onClick={goBack} className="text-sm text-indigo-600 hover:underline">← Back</button>
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
     </div>
   );

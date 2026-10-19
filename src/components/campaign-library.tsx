@@ -56,9 +56,33 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
   const [files, setFiles] = useState<FileRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const j = async (u: string) => (await fetch(u)).json();
   const current = stack.length ? stack[stack.length - 1] : null;
+
+  // Restore the folder the user was in, but ONLY when returning from a file
+  // (the file link sets a flag). A fresh visit from the nav starts at the top.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("wstorage.lib.return") === "1") {
+        const raw = sessionStorage.getItem("wstorage.lib.nav");
+        if (raw) {
+          const s = JSON.parse(raw);
+          setCat(s.cat ?? null); setVert(s.vert ?? null); setCamp(s.camp ?? null);
+          setStack(Array.isArray(s.stack) ? s.stack : []);
+        }
+        sessionStorage.setItem("wstorage.lib.return", "0");
+      }
+    } catch { /* ignore storage errors */ }
+    setReady(true);
+  }, []);
+
+  // Remember the current location so a round-trip to a file can come back here.
+  useEffect(() => {
+    if (!ready) return;
+    try { sessionStorage.setItem("wstorage.lib.nav", JSON.stringify({ cat, vert, camp, stack })); } catch { /* ignore */ }
+  }, [ready, cat, vert, camp, stack]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,7 +99,7 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
       }
     } finally { setLoading(false); }
   }, [cat, vert, camp, stack]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (ready) load(); }, [ready, load]);
 
   const level = !cat ? "category" : !vert ? "vertical" : !camp ? "campaign" : "folders";
   const inFolder = !!camp && stack.length > 0;
@@ -134,7 +158,7 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
                 <ul className="divide-y divide-slate-50">
                   {files.map((f) => (
                     <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
-                      <Link href={`/files/${f.id}`} className="flex min-w-0 items-center gap-3">
+                      <Link href={`/files/${f.id}`} onClick={() => { try { sessionStorage.setItem("wstorage.lib.return", "1"); } catch { /* ignore */ } }} className="flex min-w-0 items-center gap-3">
                         <span className="text-lg">{iconFor(f.extension)}</span>
                         <span className="truncate font-medium text-slate-800 hover:text-indigo-600">{f.name}</span>
                       </Link>

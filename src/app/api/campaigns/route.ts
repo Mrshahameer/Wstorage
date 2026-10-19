@@ -3,16 +3,24 @@ import { z } from "zod";
 import { requireUser, requireRole, logActivity } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
+import { isAdmin, accessScope } from "@/lib/access";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    const user = await requireUser();
     const verticalId = req.nextUrl.searchParams.get("verticalId");
+    const scope = req.nextUrl.searchParams.get("scope");
     let q = supabaseAdmin()
       .from("campaigns")
       .select("id,vertical_id,campaign_type_id,name,buyer,status,created_at")
       .order("name");
     if (verticalId) q = q.eq("vertical_id", verticalId);
+    // scope=accessible limits a non-admin to the campaigns they can access.
+    if (scope === "accessible" && !isAdmin(user)) {
+      const s = await accessScope(user.id);
+      if (!s.campaignIds.length) return NextResponse.json({ campaigns: [] });
+      q = q.in("id", s.campaignIds);
+    }
     const { data } = await q;
     return NextResponse.json({ campaigns: data ?? [] });
   } catch (e) {
