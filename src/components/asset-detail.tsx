@@ -84,7 +84,7 @@ export function AssetDetail({ id, canShare }: { id: string; canShare: boolean })
 
   return (
     <div className="max-w-4xl space-y-6">
-      <Link href="/files" className="text-sm text-indigo-600 hover:underline">← Back to Campaign Library</Link>
+      <button onClick={goBack} className="text-sm text-indigo-600 hover:underline">← Back</button>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{file.name}</h1>
         {crumbs.length > 0 && <p className="text-sm text-slate-500 mt-1">{crumbs.join("  ›  ")}</p>}
