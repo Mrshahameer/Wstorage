@@ -39,6 +39,7 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
   const [resourceTypes, setResourceTypes] = useState<Opt[]>([]);
   const [categoryId, setCategoryId] = useState("");
   const [verticalId, setVerticalId] = useState("");
+  const [campaignId, setCampaignId] = useState("");
   const [resourceTypeId, setResourceTypeId] = useState("");
   const [ext, setExt] = useState("");
 
@@ -49,6 +50,19 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
     j("/api/resource-types").then((d) => setResourceTypes(d.resourceTypes ?? [])).catch(() => {});
   }, []);
 
+  // Deep links (e.g. from the AI Search Assistant): /files?campaignId=… or ?q=…
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("q")) setQ(p.get("q")!);
+      if (p.get("categoryId")) setCategoryId(p.get("categoryId")!);
+      if (p.get("verticalId")) setVerticalId(p.get("verticalId")!);
+      if (p.get("campaignId")) setCampaignId(p.get("campaignId")!);
+      if (p.get("resourceTypeId")) setResourceTypeId(p.get("resourceTypeId")!);
+      if (p.get("ext")) setExt(p.get("ext")!);
+    } catch { /* ignore */ }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -56,18 +70,19 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
       if (q) p.set("q", q);
       if (categoryId) p.set("categoryId", categoryId);
       if (verticalId) p.set("verticalId", verticalId);
+      if (campaignId) p.set("campaignId", campaignId);
       if (resourceTypeId) p.set("resourceTypeId", resourceTypeId);
       if (ext) p.set("ext", ext);
       const r = await fetch(`/api/files?${p.toString()}`);
       const j = await r.json();
       if (r.ok) setFiles(j.files);
     } finally { setLoading(false); }
-  }, [q, categoryId, verticalId, resourceTypeId, ext]);
+  }, [q, categoryId, verticalId, campaignId, resourceTypeId, ext]);
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
-  const clearFilters = () => { setCategoryId(""); setVerticalId(""); setResourceTypeId(""); setExt(""); };
-  const hasFilters = categoryId || verticalId || resourceTypeId || ext;
+  const clearFilters = () => { setCategoryId(""); setVerticalId(""); setCampaignId(""); setResourceTypeId(""); setExt(""); };
+  const hasFilters = categoryId || verticalId || campaignId || resourceTypeId || ext;
 
   return (
     <div>

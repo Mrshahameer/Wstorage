@@ -12,6 +12,7 @@ export function SidebarNav({ isAdmin, isSuper, canShare }: { isAdmin: boolean; i
   const main: { href: string; label: string; show: boolean }[] = [
     { href: "/dashboard", label: "Dashboard", show: true },
     { href: "/library", label: "Campaign Library", show: true },
+    { href: "/assistant", label: "AI Search Assistant", show: true },
     { href: "/files", label: "Search", show: true },
     { href: "/shared", label: "Shared with me", show: true },
   ];
@@ -22,6 +23,7 @@ export function SidebarNav({ isAdmin, isSuper, canShare }: { isAdmin: boolean; i
     { href: "/settings/users", label: "Users & access", show: isAdmin },
     { href: "/settings/roles", label: "Roles & permissions", show: isAdmin },
     { href: "/settings/share-links", label: "Share links", show: canShare },
+    { href: "/settings/ai", label: "AI Control", show: isAdmin },
     { href: "/settings/activity", label: "Activity logs", show: isSuper },
     { href: "/settings/storage-keys", label: "Storage keys", show: isAdmin },
   ];
