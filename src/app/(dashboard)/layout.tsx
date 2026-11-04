@@ -13,10 +13,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen flex bg-slate-50">
-      <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-slate-800 bg-slate-900 text-slate-300">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300">
         <div>
-          <div className="flex items-center gap-2 px-5 h-16 border-b border-slate-800">
-            <div className="h-7 w-7 rounded-md bg-indigo-500 grid place-items-center text-white font-bold text-sm">W</div>
+          <div className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-800/60">
+            <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-indigo-900/30">W</div>
             <span className="text-white font-semibold tracking-tight">Wstorage</span>
           </div>
           <SidebarNav isAdmin={isAdmin} isSuper={isSuper} canShare={canShare} />

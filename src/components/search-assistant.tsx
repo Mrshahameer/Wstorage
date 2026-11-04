@@ -16,6 +16,7 @@ interface Msg {
   results?: Result[];
 }
 
+const GREETING = "Hi. Tell me what you are looking for and I will find the campaign folder.";
 const SUGGESTIONS = [
   "Auto insurance live transfer creatives",
   "Final expense transfer scripts",
@@ -23,26 +24,70 @@ const SUGGESTIONS = [
   "Roofing inbound recordings",
 ];
 
+function Sparkle({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 2l1.8 4.6L18.5 8.5l-4.7 1.9L12 15l-1.8-4.6L5.5 8.5l4.7-1.9L12 2z" />
+      <path d="M18 13l.9 2.3L21.5 16l-2.6 1-.9 2.3-.9-2.3-2.6-1 2.6-.7L18 13z" />
+    </svg>
+  );
+}
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
 function Badge({ score }: { score: number }) {
   const pct = Math.round(score * 100);
-  const tone = pct >= 80 ? "bg-emerald-100 text-emerald-700" : pct >= 55 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500";
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{pct}% match</span>;
+  const tone = pct >= 80 ? "bg-emerald-50 text-emerald-600 ring-emerald-200" : pct >= 55 ? "bg-amber-50 text-amber-600 ring-amber-200" : "bg-slate-100 text-slate-500 ring-slate-200";
+  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${tone}`}>{pct}% match</span>;
+}
+
+function ResultCard({ r }: { r: Result }) {
+  return (
+    <Link
+      href={r.link}
+      className="tapsable group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-lg hover:shadow-indigo-900/5"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-900/20">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+            <path d="M3 11l14-6v14L3 13v-2zM3 11v2a2 2 0 002 2h1M17 7a4 4 0 010 6" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-800">{r.title}</p>
+          <p className="truncate text-xs text-slate-400">{r.path}</p>
+          {r.assetHint && <p className="mt-0.5 text-[11px] font-medium text-indigo-500">looking for: {r.assetHint}</p>}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <Badge score={r.score} />
+        <span className="flex items-center gap-1 text-xs font-semibold text-indigo-600 transition group-hover:gap-1.5">
+          Open
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M7 7h10v10M7 17L17 7" /></svg>
+        </span>
+      </div>
+    </Link>
+  );
 }
 
 export function SearchAssistant() {
-  const [msgs, setMsgs] = useState<Msg[]>([
-    { role: "assistant", content: "Hi. Tell me what you are looking for and I will find the campaign folder. For example, 'auto insurance live transfer creatives'." },
-  ]);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  const started = msgs.length > 0;
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
 
   async function send(text: string) {
     const q = text.trim();
     if (!q || busy) return;
-    const history = msgs.filter((m) => m.content).slice(-10).map((m) => ({ role: m.role, content: m.content }));
+    const history = msgs.slice(-10).map((m) => ({ role: m.role, content: m.content }));
     setMsgs((m) => [...m, { role: "user", content: q }]);
     setInput("");
     setBusy(true);
@@ -53,11 +98,9 @@ export function SearchAssistant() {
         body: JSON.stringify({ query: q, history }),
       });
       const j = await r.json();
-      if (!r.ok) {
-        setMsgs((m) => [...m, { role: "assistant", content: j.error || "Something went wrong. Please try again." }]);
-      } else {
-        setMsgs((m) => [...m, { role: "assistant", content: j.reply, results: j.results ?? [] }]);
-      }
+      setMsgs((m) => [...m, r.ok
+        ? { role: "assistant", content: j.reply, results: j.results ?? [] }
+        : { role: "assistant", content: j.error || "Something went wrong. Please try again." }]);
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: "Network error. Please try again." }]);
     } finally {
@@ -66,82 +109,103 @@ export function SearchAssistant() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-3xl flex-col">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">AI Search Assistant</h1>
-        <p className="mt-1 text-sm text-slate-500">Find any campaign, folder, or asset using natural language.</p>
+    <div className="mx-auto flex h-[calc(100vh-7rem)] max-w-3xl flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-4">
+        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-900/20">
+          <Sparkle className="h-5 w-5" />
+        </span>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">AI Search Assistant</h1>
+          <p className="text-sm text-slate-500">Find any campaign, folder, or asset in plain language.</p>
+        </div>
       </div>
 
-      <div className="mt-4 flex-1 space-y-4 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5">
-        {msgs.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-            <div className={m.role === "user" ? "max-w-[85%]" : "w-full max-w-[90%]"}>
-              <div
-                className={
-                  "rounded-2xl px-4 py-2 text-sm " +
-                  (m.role === "user" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-800")
-                }
-              >
-                {m.content}
+      {/* Conversation / empty state */}
+      <div ref={scrollRef} className="nice-scroll flex-1 overflow-y-auto">
+        {!started ? (
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="relative mb-6">
+              <div className="animate-blob absolute -inset-6 rounded-full bg-gradient-to-br from-indigo-300/40 to-violet-300/40 blur-2xl" />
+              <div className="animate-float relative grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-xl shadow-indigo-900/25">
+                <Sparkle className="h-9 w-9" />
               </div>
-              {m.results && m.results.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {m.results.map((r) => (
-                    <Link
-                      key={r.id}
-                      href={r.link}
-                      className="group flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-indigo-50 text-lg group-hover:bg-indigo-100">📣</span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-800">{r.title}</p>
-                          <p className="truncate text-xs text-slate-400">{r.path}</p>
-                          {r.assetHint && <p className="text-[11px] text-indigo-500">looking for: {r.assetHint}</p>}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <Badge score={r.score} />
-                        <span className="text-xs font-medium text-indigo-600 group-hover:underline">Open ↗</span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800">What are you looking for?</h2>
+            <p className="mt-1 max-w-sm text-sm text-slate-500">{GREETING} Try one of these:</p>
+            <div className="mt-5 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => send(s)}
+                  className="tapsable rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md"
+                >
+                  {s}
+                </button>
+              ))}
             </div>
           </div>
-        ))}
-        {busy && <div className="flex justify-start"><div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-400">Searching…</div></div>}
-        <div ref={endRef} />
+        ) : (
+          <div className="space-y-4 pb-2">
+            {msgs.map((m, i) => (
+              <div key={i} className={"animate-msg-in flex gap-2.5 " + (m.role === "user" ? "justify-end" : "justify-start")}>
+                {m.role === "assistant" && (
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md">
+                    <Sparkle className="h-4 w-4" />
+                  </span>
+                )}
+                <div className={m.role === "user" ? "max-w-[82%]" : "w-full max-w-[88%]"}>
+                  <div
+                    className={
+                      "px-4 py-2.5 text-sm leading-relaxed shadow-sm " +
+                      (m.role === "user"
+                        ? "rounded-[18px] rounded-br-md bg-gradient-to-br from-indigo-500 to-violet-500 text-white"
+                        : "rounded-[18px] rounded-tl-md border border-slate-200/70 bg-white text-slate-800")
+                    }
+                  >
+                    {m.content}
+                  </div>
+                  {m.results && m.results.length > 0 && (
+                    <div className="mt-2.5 space-y-2">
+                      {m.results.map((r) => <ResultCard key={r.id} r={r} />)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {busy && (
+              <div className="animate-msg-in flex items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md">
+                  <Sparkle className="h-4 w-4" />
+                </span>
+                <div className="typing rounded-[18px] rounded-tl-md border border-slate-200/70 bg-white px-4 py-3 text-slate-500 shadow-sm">
+                  <span /><span /><span />
+                </div>
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+        )}
       </div>
 
-      {msgs.length <= 1 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button key={s} onClick={() => send(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-indigo-300 hover:text-indigo-600">
-              {s}
-            </button>
-          ))}
+      {/* Input bar */}
+      <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="pt-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 p-1.5 pl-4 shadow-lg shadow-slate-900/5 backdrop-blur focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Describe what you are looking for…"
+            className="flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+          />
+          <button
+            type="submit"
+            disabled={busy || !input.trim()}
+            className="tapsable grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-900/20 transition hover:brightness-110 disabled:opacity-40"
+            aria-label="Send"
+          >
+            <SendIcon />
+          </button>
         </div>
-      )}
-
-      <form
-        onSubmit={(e) => { e.preventDefault(); send(input); }}
-        className="mt-3 flex items-center gap-2"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Describe what you are looking for…"
-          className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-        />
-        <button
-          type="submit"
-          disabled={busy || !input.trim()}
-          className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          Send
-        </button>
       </form>
     </div>
   );
