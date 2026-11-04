@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       )
       .eq("id", id)
       .single();
-    if (error || !file || file.status !== "ready") {
+    if (error || !file || (file as { status?: string }).status !== "ready") {
       return NextResponse.json({ error: "File not available" }, { status: 404 });
     }
     if (!(await canFile(user, "view", id))) {

@@ -3,7 +3,7 @@
 // before any file list is revealed.
 import { NextRequest, NextResponse } from "next/server";
 import { handleError } from "@/lib/api";
-import { loadLink, linkProblem, expandFiles, verifyPassword } from "@/lib/share";
+import { loadLink, linkProblem, expandFiles, verifyPassword, labelFiles } from "@/lib/share";
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   try {
@@ -28,12 +28,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
       name: link.name,
       allowDownload: link.allow_download,
       allowPreview: link.allow_preview,
-      files: files.map((f) => ({
-        id: f.id,
-        name: f.name,
-        size_bytes: f.size_bytes,
-        content_type: f.content_type,
-      })),
+      files: await labelFiles(files),
     });
   } catch (e) {
     return handleError(e);
