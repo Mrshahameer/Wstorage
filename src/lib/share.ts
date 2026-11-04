@@ -31,6 +31,22 @@ export interface ShareFile {
   content_type: string | null;
   object_key: string;
   storage_key_id: string;
+  category_id: string | null;
+  vertical_id: string | null;
+  campaign_id: string | null;
+  folder_id: string | null;
+}
+
+/** A file plus the names of its category / vertical / campaign / folder, for grouping in the public view. */
+export interface ShareFileView {
+  id: string;
+  name: string;
+  size_bytes: number;
+  content_type: string | null;
+  category: string | null;
+  vertical: string | null;
+  campaign: string | null;
+  folder: string | null;
 }
 
 /** URL-safe token, ~22 chars. */
@@ -83,7 +99,7 @@ export async function expandFiles(shareLinkId: string): Promise<ShareFile[]> {
     .eq("share_link_id", shareLinkId);
 
   const fileIds = new Set<string>();
-  const cols = "id,name,size_bytes,content_type,object_key,storage_key_id,status";
+  const cols = "id,name,size_bytes,content_type,object_key,storage_key_id,status,category_id,vertical_id,campaign_id,folder_id";
   const files: Record<string, ShareFile> = {};
 
   const addRows = (rows: (ShareFile & { status: string })[] | null) => {
@@ -96,6 +112,10 @@ export async function expandFiles(shareLinkId: string): Promise<ShareFile[]> {
           content_type: r.content_type,
           object_key: r.object_key,
           storage_key_id: r.storage_key_id,
+          category_id: r.category_id ?? null,
+          vertical_id: r.vertical_id ?? null,
+          campaign_id: r.campaign_id ?? null,
+          folder_id: r.folder_id ?? null,
         };
       }
     }
@@ -121,6 +141,33 @@ export async function expandFiles(shareLinkId: string): Promise<ShareFile[]> {
     addRows(data);
   }
   return Object.values(files);
+}
+
+/** Attach category / vertical / campaign / folder NAMES to a file list, for the public grouped view. */
+export async function labelFiles(files: ShareFile[]): Promise<ShareFileView[]> {
+  const db = supabaseAdmin();
+  const uniq = (arr: (string | null)[]) => Array.from(new Set(arr.filter((x): x is string => !!x)));
+  const nameMap = async (table: string, ids: string[]): Promise<Map<string, string>> => {
+    if (!ids.length) return new Map();
+    const { data } = await db.from(table).select("id,name").in("id", ids);
+    return new Map((data ?? []).map((r: { id: string; name: string }) => [r.id, r.name]));
+  };
+  const [cats, verts, camps, folders] = await Promise.all([
+    nameMap("categories", uniq(files.map((f) => f.category_id))),
+    nameMap("verticals", uniq(files.map((f) => f.vertical_id))),
+    nameMap("campaigns", uniq(files.map((f) => f.campaign_id))),
+    nameMap("folders", uniq(files.map((f) => f.folder_id))),
+  ]);
+  return files.map((f) => ({
+    id: f.id,
+    name: f.name,
+    size_bytes: f.size_bytes,
+    content_type: f.content_type,
+    category: f.category_id ? cats.get(f.category_id) ?? null : null,
+    vertical: f.vertical_id ? verts.get(f.vertical_id) ?? null : null,
+    campaign: f.campaign_id ? camps.get(f.campaign_id) ?? null : null,
+    folder: f.folder_id ? folders.get(f.folder_id) ?? null : null,
+  }));
 }
 
 /** Mint a short-lived signed download URL for one file in a link, and count it. */
