@@ -45,36 +45,115 @@ function Badge({ score }: { score: number }) {
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${tone}`}>{pct}% match</span>;
 }
 
-function ResultCard({ r }: { r: Result }) {
+function ActionBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
   return (
-    <Link
-      href={r.link}
-      className="tapsable group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-lg hover:shadow-indigo-900/5"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-900/20">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-            <path d="M3 11l14-6v14L3 13v-2zM3 11v2a2 2 0 002 2h1M17 7a4 4 0 010 6" />
-          </svg>
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-800">{r.title}</p>
-          <p className="truncate text-xs text-slate-400">{r.path}</p>
-          {r.assetHint && <p className="mt-0.5 text-[11px] font-medium text-indigo-500">looking for: {r.assetHint}</p>}
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <Badge score={r.score} />
-        <span className="flex items-center gap-1 text-xs font-semibold text-indigo-600 transition group-hover:gap-1.5">
-          Open
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M7 7h10v10M7 17L17 7" /></svg>
-        </span>
-      </div>
-    </Link>
+    <button onClick={onClick} title={title} className="tapsable inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-indigo-600">
+      {children}
+    </button>
   );
 }
 
-export function SearchAssistant() {
+function ResultCard({ r, canShare }: { r: Result; canShare: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [pwOn, setPwOn] = useState(false);
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const appUrl = () => (typeof window !== "undefined" ? window.location.origin : "") + r.link;
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 2200); };
+
+  async function copyAppLink() {
+    try { await navigator.clipboard.writeText(appUrl()); flash("Link copied"); } catch { flash("Copy failed"); }
+  }
+  async function createShare() {
+    setBusy(true); setMsg(null);
+    try {
+      const body: Record<string, unknown> = { name: r.title, resources: [{ type: "campaign", id: r.id }] };
+      if (pwOn && pw.trim()) body.password = pw.trim();
+      const res = await fetch("/api/share-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await res.json();
+      if (!res.ok) { flash(j.error || "Could not create link"); return; }
+      const url: string = j.shareLink.url;
+      const text = pwOn && pw.trim() ? `${url}\nPassword: ${pw.trim()}` : url;
+      await navigator.clipboard.writeText(text);
+      flash(pwOn && pw.trim() ? "Share link + password copied" : "Share link copied");
+      setOpen(false); setPw(""); setPwOn(false);
+    } catch {
+      flash("Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm transition-all hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-900/5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-900/20">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M3 11l14-6v14L3 13v-2zM3 11v2a2 2 0 002 2h1M17 7a4 4 0 010 6" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-800">{r.title}</p>
+            <p className="truncate text-xs text-slate-400">{r.path}</p>
+            {r.assetHint && <p className="mt-0.5 text-[11px] font-medium text-indigo-500">looking for: {r.assetHint}</p>}
+          </div>
+        </div>
+        <Badge score={r.score} />
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2">
+        <Link href={r.link} className="tapsable inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-100">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M7 7h10v10M7 17L17 7" /></svg>
+          Open
+        </Link>
+        <ActionBtn onClick={() => window.open(r.link, "_blank", "noopener")} title="Open in a new tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h5" /></svg>
+          New tab
+        </ActionBtn>
+        <ActionBtn onClick={copyAppLink} title="Copy the in-app link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M9 9h10v10H9zM5 15V5h10" /></svg>
+          Copy link
+        </ActionBtn>
+        {canShare && (
+          <ActionBtn onClick={() => setOpen((o) => !o)} title="Create a public share link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M18 8a3 3 0 10-2.8-4M6 15a3 3 0 100-6 3 3 0 000 6zm9 7a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+            Share link
+          </ActionBtn>
+        )}
+        {msg && <span className="ml-auto text-[11px] font-medium text-emerald-600">{msg}</span>}
+      </div>
+
+      {open && canShare && (
+        <div className="mt-2 rounded-xl bg-slate-50 p-3">
+          <p className="text-xs text-slate-500">Creates a public link anyone can open, no account needed.</p>
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" checked={pwOn} onChange={(e) => setPwOn(e.target.checked)} className="rounded" />
+            Password protect
+          </label>
+          {pwOn && (
+            <input
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="Set a password"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button onClick={createShare} disabled={busy || (pwOn && !pw.trim())} className="tapsable rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+              {busy ? "Creating…" : "Create & copy"}
+            </button>
+            <span className="text-[11px] text-slate-400">The password is copied with the link.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SearchAssistant({ canShare }: { canShare: boolean }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -167,7 +246,7 @@ export function SearchAssistant() {
                   </div>
                   {m.results && m.results.length > 0 && (
                     <div className="mt-2.5 space-y-2">
-                      {m.results.map((r) => <ResultCard key={r.id} r={r} />)}
+                      {m.results.map((r) => <ResultCard key={r.id} r={r} canShare={canShare} />)}
                     </div>
                   )}
                 </div>
