@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
       .order("name");
     if (categoryId) q = q.eq("category_id", categoryId);
     const { data } = await q;
-    return NextResponse.json({ verticals: data ?? [] });
+    return NextResponse.json({ verticals: data ?? [] }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } });
   } catch (e) {
     return handleError(e);
   }

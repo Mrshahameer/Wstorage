@@ -12,7 +12,7 @@ export async function GET() {
       .select("id,name,sort")
       .order("sort")
       .order("name");
-    return NextResponse.json({ campaignTypes: data ?? [] });
+    return NextResponse.json({ campaignTypes: data ?? [] }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } });
   } catch (e) {
     return handleError(e);
   }

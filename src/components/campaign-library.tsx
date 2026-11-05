@@ -142,7 +142,11 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
       </div>
 
       {loading ? (
-        <p className="text-sm text-slate-400">Loading…</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-[72px] animate-pulse rounded-xl border border-slate-100 bg-white/70" />
+          ))}
+        </div>
       ) : level === "folders" ? (
         <div className="space-y-4">
           {folders.length > 0 && (
