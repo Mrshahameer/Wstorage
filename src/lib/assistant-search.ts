@@ -13,11 +13,42 @@ export interface AssistantResult {
   score: number; // 0..1
   link: string;
   assetHint: string | null;
+  resourceType: "folder" | "campaign"; // what a share link should target
 }
 
 interface Camp { id: string; name: string; vertical_id: string }
 interface Vert { id: string; name: string; category_id: string }
 interface Cat { id: string; name: string }
+interface Folder { id: string; name: string; campaign_id: string | null }
+
+// Maps an asset type (from the query) to the standard campaign folder it lives in.
+// Each entry is a list of keywords; the first folder whose name contains any of
+// them wins. Covers the 7 standard folders plus common synonyms.
+const FOLDER_KEYWORDS: { label: string; keys: string[] }[] = [
+  { label: "Creatives", keys: ["creative", "ad", "banner", "image", "graphic"] },
+  { label: "Landing Pages", keys: ["landing", "lander", "lp", "page"] },
+  { label: "Agent Scripts", keys: ["script", "pitch", "rebuttal"] },
+  { label: "Verification Recordings", keys: ["recording", "recordings", "verification", "call recording"] },
+  { label: "Data Samples", keys: ["data sample", "sample", "lead sample", "data"] },
+  { label: "TCPA & Compliance", keys: ["tcpa", "compliance", "consent", "disclosure"] },
+  { label: "Other Assets", keys: ["other", "misc"] },
+];
+
+/** Which folder keyword group an asset_type points at, or null if none. */
+function folderGroupFor(assetType: string | null): string[] | null {
+  if (!assetType) return null;
+  const a = assetType.toLowerCase();
+  for (const g of FOLDER_KEYWORDS) {
+    if (g.keys.some((k) => a.includes(k) || k.includes(a))) return g.keys;
+  }
+  return null;
+}
+
+/** Does a folder name match the asset-type keyword group? */
+function folderMatches(name: string, keys: string[]): boolean {
+  const n = name.toLowerCase();
+  return keys.some((k) => n.includes(k));
+}
 
 export interface LibraryFacts {
   categories: number;
@@ -185,12 +216,44 @@ export async function searchCampaigns(user: SessionUser, intent: Intent): Promis
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
-  return scored.map((x) => ({
-    id: x.c.id,
-    title: x.c.name,
-    path: [x.cat?.name, x.v?.name, x.c.name].filter(Boolean).join("  ›  "),
-    score: Math.min(1, Math.round(x.score * 100) / 100),
-    link: `/files?campaignId=${x.c.id}`,
-    assetHint: intent.asset_type,
-  }));
+  // When the query names an asset type (agent scripts, data samples, creatives…),
+  // return the specific folder inside each matching campaign and link straight to
+  // it. Otherwise link to the campaign, which opens its folders grouped.
+  const group = folderGroupFor(intent.asset_type);
+  const folderByCampaign = new Map<string, Folder>();
+  if (group && scored.length) {
+    const { data: folders } = await db
+      .from("folders")
+      .select("id,name,campaign_id")
+      .in("campaign_id", scored.map((x) => x.c.id));
+    for (const f of (folders ?? []) as Folder[]) {
+      if (!f.campaign_id || folderByCampaign.has(f.campaign_id)) continue;
+      if (folderMatches(f.name, group)) folderByCampaign.set(f.campaign_id, f);
+    }
+  }
+
+  return scored.map((x) => {
+    const folder = folderByCampaign.get(x.c.id) ?? null;
+    const basePath = [x.cat?.name, x.v?.name, x.c.name].filter(Boolean);
+    if (folder) {
+      return {
+        id: folder.id,
+        title: `${x.c.name} — ${folder.name}`,
+        path: [...basePath, folder.name].join("  ›  "),
+        score: Math.min(1, Math.round(x.score * 100) / 100),
+        link: `/library?campaignId=${x.c.id}&folderId=${folder.id}`,
+        assetHint: folder.name,
+        resourceType: "folder",
+      };
+    }
+    return {
+      id: x.c.id,
+      title: x.c.name,
+      path: basePath.join("  ›  "),
+      score: Math.min(1, Math.round(x.score * 100) / 100),
+      link: `/library?campaignId=${x.c.id}`,
+      assetHint: intent.asset_type,
+      resourceType: "campaign",
+    };
+  });
 }
