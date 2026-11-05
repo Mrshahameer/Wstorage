@@ -59,95 +59,118 @@ export interface LibraryFacts {
   categoryNames: string[];
   verticalNames: string[];
   campaignTypeNames: string[];
+  perVertical: { name: string; campaigns: number }[];
+  perCategory: { name: string; verticals: number; campaigns: number }[];
   scoped: boolean; // true = limited to what this user can access
+}
+
+/** Roll a list of campaign vertical_ids up into per-vertical and per-category counts. */
+function rollUp(verticalIds: string[], vMap: Map<string, Vert>, cMap: Map<string, Cat>) {
+  const perV = new Map<string, number>();
+  const perCCamp = new Map<string, number>();
+  const perCVert = new Map<string, Set<string>>();
+  for (const vid of verticalIds) {
+    const v = vMap.get(vid);
+    if (!v) continue;
+    perV.set(vid, (perV.get(vid) ?? 0) + 1);
+    perCCamp.set(v.category_id, (perCCamp.get(v.category_id) ?? 0) + 1);
+    (perCVert.get(v.category_id) ?? perCVert.set(v.category_id, new Set()).get(v.category_id)!).add(vid);
+  }
+  const perVertical = [...perV.entries()]
+    .map(([vid, n]) => ({ name: vMap.get(vid)?.name ?? "", campaigns: n }))
+    .filter((x) => x.name)
+    .sort((a, b) => b.campaigns - a.campaigns);
+  const perCategory = [...perCCamp.entries()]
+    .map(([cid, n]) => ({ name: cMap.get(cid)?.name ?? "", verticals: perCVert.get(cid)?.size ?? 0, campaigns: n }))
+    .filter((x) => x.name)
+    .sort((a, b) => b.campaigns - a.campaigns);
+  return { perVertical, perCategory };
 }
 
 /** Real counts + names, filtered to what the user can see. Grounds the assistant's answers. */
 export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const db = supabaseAdmin();
-  const names = async (table: string): Promise<string[]> => {
-    const { data } = await db.from(table).select("name").order("name");
-    return (data ?? []).map((r: { name: string }) => r.name);
-  };
+  const admin = isAdmin(user);
 
-  if (isAdmin(user)) {
-    const [cat, ver, cam, fol, fil, categoryNames, verticalNames, campaignTypeNames] = await Promise.all([
-      db.from("categories").select("*", { count: "exact", head: true }),
-      db.from("verticals").select("*", { count: "exact", head: true }),
-      db.from("campaigns").select("*", { count: "exact", head: true }),
-      db.from("folders").select("*", { count: "exact", head: true }),
-      db.from("files").select("*", { count: "exact", head: true }).eq("status", "ready"),
-      names("categories"),
-      names("verticals"),
-      names("campaign_types"),
-    ]);
-    return {
-      categories: cat.count ?? 0,
-      verticals: ver.count ?? 0,
-      campaigns: cam.count ?? 0,
-      folders: fol.count ?? 0,
-      files: fil.count ?? 0,
-      categoryNames, verticalNames, campaignTypeNames,
-      scoped: false,
-    };
+  let campIds: string[] | null = null;
+  if (!admin) {
+    const scope = await accessScope(user.id);
+    campIds = scope.campaignIds;
+    if (campIds.length === 0) {
+      return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], perVertical: [], perCategory: [], scoped: true };
+    }
   }
 
-  // Non-admin: limit to the campaigns they can access.
-  const scope = await accessScope(user.id);
-  const campIds = scope.campaignIds;
-  if (campIds.length === 0) {
-    return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], scoped: true };
-  }
-  const [{ data: camps }, { data: verts }, { data: cats }, campaignTypeNames, fol] = await Promise.all([
-    db.from("campaigns").select("vertical_id").in("id", campIds),
-    db.from("verticals").select("id,name,category_id"),
-    db.from("categories").select("id,name"),
-    names("campaign_types"),
-    db.from("folders").select("*", { count: "exact", head: true }).in("campaign_id", campIds),
+  const campQ = admin ? db.from("campaigns").select("vertical_id") : db.from("campaigns").select("vertical_id").in("id", campIds!);
+  const folQ = admin ? db.from("folders").select("*", { count: "exact", head: true }) : db.from("folders").select("*", { count: "exact", head: true }).in("campaign_id", campIds!);
+  const filQ = admin
+    ? db.from("files").select("*", { count: "exact", head: true }).eq("status", "ready")
+    : db.from("files").select("*", { count: "exact", head: true }).eq("status", "ready").in("campaign_id", campIds!);
+
+  const [{ data: camps }, { data: verts }, { data: cats }, { data: ctypes }, fol, fil] = await Promise.all([
+    campQ,
+    db.from("verticals").select("id,name,category_id").order("name"),
+    db.from("categories").select("id,name").order("name"),
+    db.from("campaign_types").select("name").order("name"),
+    folQ,
+    filQ,
   ]);
+
   const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
   const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
-  const vIds = new Set((camps ?? []).map((c: { vertical_id: string }) => c.vertical_id));
-  const catIds = new Set<string>();
-  const vNames: string[] = [];
-  vIds.forEach((id) => { const v = vMap.get(id); if (v) { vNames.push(v.name); catIds.add(v.category_id); } });
-  const cNames: string[] = [];
-  catIds.forEach((id) => { const c = cMap.get(id); if (c) cNames.push(c.name); });
+  const verticalIds = (camps ?? []).map((c: { vertical_id: string }) => c.vertical_id);
+  const { perVertical, perCategory } = rollUp(verticalIds, vMap, cMap);
 
   return {
-    categories: catIds.size,
-    verticals: vIds.size,
-    campaigns: campIds.length,
+    categories: perCategory.length,
+    verticals: perVertical.length,
+    campaigns: verticalIds.length,
     folders: fol.count ?? 0,
-    files: 0,
-    categoryNames: cNames.sort(),
-    verticalNames: vNames.sort(),
-    campaignTypeNames,
-    scoped: true,
+    files: fil.count ?? 0,
+    categoryNames: perCategory.map((c) => c.name).sort(),
+    verticalNames: perVertical.map((v) => v.name).sort(),
+    campaignTypeNames: (ctypes ?? []).map((t: { name: string }) => t.name),
+    perVertical,
+    perCategory,
+    scoped: !admin,
   };
 }
 
-/** Compact facts block for the AI prompt. */
+/** Compact facts block for the AI prompt. Includes per-vertical counts so the AI can quote real numbers. */
 export function factsToString(f: LibraryFacts): string {
+  const perV = f.perVertical.map((v) => `${v.name} (${v.campaigns})`).join(", ");
+  const perC = f.perCategory.map((c) => `${c.name} (${c.verticals} verticals, ${c.campaigns} campaigns)`).join(", ");
   const lines = [
     `${f.scoped ? "You can access" : "The library has"}: ${f.categories} categories, ${f.verticals} verticals, ${f.campaigns} campaigns, ${f.folders} folders${f.files ? `, ${f.files} files` : ""}.`,
-    f.categoryNames.length ? `Categories: ${f.categoryNames.join(", ")}.` : "",
-    f.verticalNames.length ? `Verticals: ${f.verticalNames.join(", ")}.` : "",
+    perC ? `Campaigns per category: ${perC}.` : "",
+    perV ? `Campaigns per vertical: ${perV}.` : "",
     f.campaignTypeNames.length ? `Campaign types: ${f.campaignTypeNames.join(", ")}.` : "",
   ];
   return lines.filter(Boolean).join("\n");
 }
 
-/** Deterministic answer for count/list questions when AI is off. */
+/** Deterministic answer for count/list questions when AI is off. Runs on the real facts. */
 export function deterministicAnswer(query: string, f: LibraryFacts): string {
   const q = query.toLowerCase();
   const who = f.scoped ? "You can access" : "You have";
-  if (/campaign/.test(q)) return `${who} ${f.campaigns} campaigns across ${f.verticals} verticals and ${f.categories} categories.`;
-  if (/vertical/.test(q)) return `${who} ${f.verticals} verticals: ${f.verticalNames.join(", ")}.`;
-  if (/categor/.test(q)) return `${who} ${f.categories} categories: ${f.categoryNames.join(", ")}.`;
+
+  // "how many campaigns in <vertical>" / "<category>" — quote the real number.
+  const vHit = f.perVertical.find((v) => v.name && q.includes(v.name.toLowerCase()));
+  if (vHit && /campaign|how many|total|number/.test(q)) {
+    return `${vHit.name} has ${vHit.campaigns} campaign${vHit.campaigns === 1 ? "" : "s"}.`;
+  }
+  const cHit = f.perCategory.find((c) => c.name && q.includes(c.name.toLowerCase()));
+  if (cHit && /campaign|vertical|how many|total|number/.test(q)) {
+    return `${cHit.name} has ${cHit.verticals} vertical${cHit.verticals === 1 ? "" : "s"} and ${cHit.campaigns} campaign${cHit.campaigns === 1 ? "" : "s"}.`;
+  }
+
+  if (/file/.test(q)) return `${who} ${f.files} files across ${f.campaigns} campaigns.`;
   if (/folder/.test(q)) return `${who} ${f.folders} folders across ${f.campaigns} campaigns.`;
   if (/campaign type|type of campaign/.test(q)) return `Campaign types: ${f.campaignTypeNames.join(", ")}.`;
-  return `${who} ${f.categories} categories, ${f.verticals} verticals, ${f.campaigns} campaigns, and ${f.folders} folders. Ask me to find any of them.`;
+  if (/vertical/.test(q)) return `${who} ${f.verticals} verticals: ${f.verticalNames.join(", ")}.`;
+  if (/categor/.test(q)) return `${who} ${f.categories} categories: ${f.categoryNames.join(", ")}.`;
+  if (/campaign/.test(q)) return `${who} ${f.campaigns} campaigns across ${f.verticals} verticals and ${f.categories} categories.`;
+  return `${who} ${f.categories} categories, ${f.verticals} verticals, ${f.campaigns} campaigns, ${f.folders} folders, and ${f.files} files. Ask me to find or count any of them.`;
 }
 
 /** A compact taxonomy string to ground the AI's term mapping. */
