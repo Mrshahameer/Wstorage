@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { handleError } from "@/lib/api";
 import { parseIntent, looksLikeQuestion } from "@/lib/ai";
-import { buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns } from "@/lib/assistant-search";
+import { buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing } from "@/lib/assistant-search";
 
 const Schema = z.object({
   query: z.string().min(1).max(500),
@@ -25,6 +25,31 @@ export async function POST(req: NextRequest) {
 
     // Strip markdown emphasis so the chat bubble reads clean.
     const clean = (s: string) => s.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/`/g, "").trim();
+
+    // Gap analysis: "what is missing / which campaigns lack recordings" runs a
+    // real query over every campaign's folders instead of a canned reply.
+    const gapQ = /\b(missing|without|lack(?:s|ing)?|incomplete|gaps?|don'?t have|do(?:es)? not have|dont have|not have|empty)\b/i.test(query);
+    if (gapQ) {
+      const report = await analyzeMissing(user, intent.asset_type, query);
+      if (!report) {
+        return NextResponse.json({ reply: "Which folder do you mean? For example recordings, agent scripts, creatives, data samples, landing pages, or compliance.", results: [], usedAI });
+      }
+      let reply: string;
+      if (report.total === 0) reply = "You do not have any campaigns to check.";
+      else if (report.missing.length === 0) reply = `All ${report.total} campaigns have ${report.label}.`;
+      else {
+        const names = report.missing.map((m) => m.name);
+        const shown = names.slice(0, 12).join(", ");
+        const extra = names.length > 12 ? `, and ${names.length - 12} more` : "";
+        reply = `${report.missing.length} of ${report.total} campaigns are missing ${report.label}: ${shown}${extra}.`;
+      }
+      const results = report.missing.slice(0, 8).map((m) => ({
+        id: m.id, title: m.name, path: m.path, score: 0,
+        link: `/library?campaignId=${m.id}`, assetHint: null,
+        resourceType: "campaign" as const, note: `needs ${report.label}`,
+      }));
+      return NextResponse.json({ reply, results, usedAI });
+    }
 
     // Decide whether this turn shows result cards or is reply-only (an answer,
     // a greeting, or a clarifying question). The model picks the mode; a few

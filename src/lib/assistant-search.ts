@@ -14,6 +14,14 @@ export interface AssistantResult {
   link: string;
   assetHint: string | null;
   resourceType: "folder" | "campaign"; // what a share link should target
+  note?: string; // shown instead of a match score, e.g. "needs Verification Recordings"
+}
+
+export interface GapReport {
+  label: string;
+  missing: { id: string; name: string; path: string }[];
+  have: number;
+  total: number;
 }
 
 interface Camp { id: string; name: string; vertical_id: string }
@@ -21,43 +29,24 @@ interface Vert { id: string; name: string; category_id: string }
 interface Cat { id: string; name: string }
 interface Folder { id: string; name: string; campaign_id: string | null }
 
-// Maps an asset type (from the query) to the standard campaign folder it lives in.
-// Each entry is a list of keywords; the first folder whose name contains any of
-// them wins. Covers the 7 standard folders plus common synonyms.
-const FOLDER_KEYWORDS: { label: string; keys: string[] }[] = [
-  { label: "Creatives", keys: ["creative", "ad", "banner", "image", "graphic"] },
-  { label: "Landing Pages", keys: ["landing", "lander", "lp", "page"] },
-  { label: "Agent Scripts", keys: ["script", "pitch", "rebuttal"] },
-  { label: "Verification Recordings", keys: ["recording", "recordings", "verification", "call recording"] },
-  { label: "Data Samples", keys: ["data sample", "sample", "lead sample", "data"] },
-  { label: "TCPA & Compliance", keys: ["tcpa", "compliance", "consent", "disclosure"] },
-  { label: "Other Assets", keys: ["other", "misc"] },
-];
+// Folder handling is fully data-driven: nothing here hardcodes the set of
+// folders. We only turn an asset phrase into match tokens, bridging domain
+// synonyms (ads -> creatives, call scripts -> agent scripts) through expandTerms,
+// and then match those tokens against the REAL folder names in the database.
+// New folder types added later are matched automatically with no code change.
 
-/** Which folder keyword group an asset_type points at, or null if none. */
-function folderGroupFor(assetType: string | null): string[] | null {
-  if (!assetType) return null;
-  const a = assetType.toLowerCase();
-  for (const g of FOLDER_KEYWORDS) {
-    if (g.keys.some((k) => a.includes(k) || k.includes(a))) return g.keys;
-  }
-  return null;
+/** Expand an asset phrase into lowercase match tokens (length >= 3). */
+function assetTokens(text: string | null): Set<string> {
+  const out = new Set<string>();
+  for (const t of expandTerms(text || "")) if (t.length >= 3) out.add(t.toLowerCase());
+  return out;
 }
 
-/** Does a folder name match the asset-type keyword group? */
-function folderMatches(name: string, keys: string[]): boolean {
-  const n = name.toLowerCase();
-  return keys.some((k) => n.includes(k));
-}
-
-/** Map any folder name to one of the standard folder labels. */
-function canonicalFolder(name: string): string {
+/** Does a real folder name contain any of the asset tokens? */
+function nameMatchesTokens(name: string, tokens: Set<string>): boolean {
   const n = (name || "").toLowerCase();
-  for (const g of FOLDER_KEYWORDS) {
-    if (g.label === "Other Assets") continue;
-    if (g.keys.some((k) => n.includes(k))) return g.label;
-  }
-  return "Other Assets";
+  for (const t of tokens) if (n.includes(t)) return true;
+  return false;
 }
 
 export interface LibraryFacts {
@@ -74,8 +63,6 @@ export interface LibraryFacts {
   folderTypes: { name: string; folders: number; files: number }[];
   scoped: boolean; // true = limited to what this user can access
 }
-
-const STANDARD_LABELS = FOLDER_KEYWORDS.map((g) => g.label);
 
 /** Roll a list of campaign vertical_ids up into per-vertical and per-category counts. */
 function rollUp(verticalIds: string[], vMap: Map<string, Vert>, cMap: Map<string, Cat>) {
@@ -134,23 +121,23 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const verticalIds = (camps ?? []).map((c: { vertical_id: string }) => c.vertical_id);
   const { perVertical, perCategory } = rollUp(verticalIds, vMap, cMap);
 
-  // Group the real folders and files by the standard folder label, so the
-  // assistant can say what actually lives inside each campaign.
+  // Group the real folders and files by their actual folder name, so the
+  // assistant reports whatever folders truly exist. New folder types appear
+  // here on their own with no code change.
   const folById = new Map<string, string>((folRows ?? []).map((f: { id: string; name: string }) => [f.id, f.name]));
   const typeFolders = new Map<string, number>();
   for (const f of (folRows ?? []) as { id: string; name: string }[]) {
-    const lbl = canonicalFolder(f.name);
-    typeFolders.set(lbl, (typeFolders.get(lbl) ?? 0) + 1);
+    typeFolders.set(f.name, (typeFolders.get(f.name) ?? 0) + 1);
   }
   const typeFiles = new Map<string, number>();
   for (const fi of (filRows ?? []) as { folder_id: string | null }[]) {
     const name = fi.folder_id ? folById.get(fi.folder_id) : null;
-    const lbl = name ? canonicalFolder(name) : "Other Assets";
-    typeFiles.set(lbl, (typeFiles.get(lbl) ?? 0) + 1);
+    if (name) typeFiles.set(name, (typeFiles.get(name) ?? 0) + 1);
   }
-  const folderTypes = STANDARD_LABELS
+  const folderTypes = [...new Set([...typeFolders.keys(), ...typeFiles.keys()])]
     .map((name) => ({ name, folders: typeFolders.get(name) ?? 0, files: typeFiles.get(name) ?? 0 }))
-    .filter((x) => x.folders > 0 || x.files > 0);
+    .sort((a, b) => b.files - a.files || b.folders - a.folders)
+    .slice(0, 20);
 
   return {
     categories: perCategory.length,
@@ -268,12 +255,12 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
   const basis = structured.trim() ? structured : query;
   const terms = new Set<string>([...expandTerms(basis), ...intent.keywords.map((k) => k.toLowerCase())]);
   terms.delete("");
-  const group = folderGroupFor(intent.asset_type);
+  const aTokens = assetTokens(intent.asset_type);
   const assetToken = (intent.asset_type ?? "").toLowerCase();
   const qLc = query.toLowerCase().trim();
   // Tokens that describe the asset type, so they don't penalize a campaign that
   // holds the folder rather than naming it.
-  const assetTerms = new Set<string>(group ? expandTerms(group.join(" ")) : []);
+  const assetTerms = aTokens;
 
   const scored = (camps ?? [])
     .filter((c: Camp) => !allowed || allowed.has(c.id))
@@ -313,14 +300,14 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
   // return the specific folder inside each matching campaign and link straight to
   // it. Otherwise link to the campaign, which opens its folders grouped.
   const folderByCampaign = new Map<string, Folder>();
-  if (group && scored.length) {
+  if (aTokens.size && scored.length) {
     const { data: folders } = await db
       .from("folders")
       .select("id,name,campaign_id")
       .in("campaign_id", scored.map((x) => x.c.id));
     for (const f of (folders ?? []) as Folder[]) {
       if (!f.campaign_id || folderByCampaign.has(f.campaign_id)) continue;
-      if (folderMatches(f.name, group)) folderByCampaign.set(f.campaign_id, f);
+      if (nameMatchesTokens(f.name, aTokens)) folderByCampaign.set(f.campaign_id, f);
     }
   }
 
@@ -348,4 +335,70 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
       resourceType: "campaign",
     };
   });
+}
+
+/**
+ * Find which accessible campaigns are missing a given asset type, by checking
+ * each campaign's matching folder for at least one file. Runs real queries so
+ * "what recordings are missing" gets a true answer, not a canned reply.
+ */
+export async function analyzeMissing(user: SessionUser, assetType: string | null, query = ""): Promise<GapReport | null> {
+  const tokens = assetTokens(assetType).size ? assetTokens(assetType) : assetTokens(query);
+  if (tokens.size === 0) return null;
+
+  const db = supabaseAdmin();
+  let allowed: Set<string> | null = null;
+  if (!isAdmin(user)) {
+    const scope = await accessScope(user.id);
+    allowed = new Set(scope.campaignIds);
+    if (allowed.size === 0) return { label: "", missing: [], have: 0, total: 0 };
+  }
+
+  const [{ data: camps }, { data: verts }, { data: cats }, { data: folders }, { data: files }] = await Promise.all([
+    db.from("campaigns").select("id,name,vertical_id"),
+    db.from("verticals").select("id,name,category_id"),
+    db.from("categories").select("id,name"),
+    db.from("folders").select("id,name,campaign_id"),
+    db.from("files").select("folder_id").eq("status", "ready"),
+  ]);
+
+  // Resolve the target to the REAL folder names that match the asset tokens.
+  const targetNames = new Set<string>();
+  const nameFreq = new Map<string, number>();
+  for (const fo of (folders ?? []) as Folder[]) {
+    if (nameMatchesTokens(fo.name, tokens)) {
+      targetNames.add(fo.name);
+      nameFreq.set(fo.name, (nameFreq.get(fo.name) ?? 0) + 1);
+    }
+  }
+  if (targetNames.size === 0) return null;
+  // Label it by the most common matching folder name, e.g. "Verification Recordings".
+  const label = [...nameFreq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+  const filesByFolder = new Map<string, number>();
+  for (const f of (files ?? []) as { folder_id: string | null }[]) {
+    if (f.folder_id) filesByFolder.set(f.folder_id, (filesByFolder.get(f.folder_id) ?? 0) + 1);
+  }
+  // A campaign "has" the asset when it owns a matching folder with >=1 file.
+  const hasAsset = new Set<string>();
+  for (const fo of (folders ?? []) as Folder[]) {
+    if (!fo.campaign_id) continue;
+    if (targetNames.has(fo.name) && (filesByFolder.get(fo.id) ?? 0) > 0) hasAsset.add(fo.campaign_id);
+  }
+
+  const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
+  const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
+
+  const missing: GapReport["missing"] = [];
+  let have = 0, total = 0;
+  for (const c of (camps ?? []) as Camp[]) {
+    if (allowed && !allowed.has(c.id)) continue;
+    total += 1;
+    if (hasAsset.has(c.id)) { have += 1; continue; }
+    const v = vMap.get(c.vertical_id);
+    const cat = v ? cMap.get(v.category_id) : undefined;
+    missing.push({ id: c.id, name: c.name, path: [cat?.name, v?.name, c.name].filter(Boolean).join("  ›  ") });
+  }
+  missing.sort((a, b) => a.name.localeCompare(b.name));
+  return { label, missing, have, total };
 }
