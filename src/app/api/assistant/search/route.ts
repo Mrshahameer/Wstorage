@@ -27,7 +27,10 @@ export async function POST(req: NextRequest) {
     const clean = (s: string) => s.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/`/g, "").trim();
 
     // Answer mode (questions about the library) vs search mode (find a folder).
-    const answerMode = intent.mode === "answer" || (!usedAI && looksLikeQuestion(query));
+    // A clear count question always answers in chat, even if the model tagged it
+    // as a search, so "how many / total …" never returns cards instead of a number.
+    const countQ = /\b(how many|how much|number of|count of|total|do we have|are there)\b/i.test(query) || /^\s*total\b/i.test(query);
+    const answerMode = intent.mode === "answer" || countQ || (!usedAI && looksLikeQuestion(query));
     if (answerMode) {
       const reply = clean(intent.reply || deterministicAnswer(query, facts));
       return NextResponse.json({ reply, results: [], usedAI });
