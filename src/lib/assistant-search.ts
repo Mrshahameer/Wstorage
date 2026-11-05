@@ -50,6 +50,16 @@ function folderMatches(name: string, keys: string[]): boolean {
   return keys.some((k) => n.includes(k));
 }
 
+/** Map any folder name to one of the standard folder labels. */
+function canonicalFolder(name: string): string {
+  const n = (name || "").toLowerCase();
+  for (const g of FOLDER_KEYWORDS) {
+    if (g.label === "Other Assets") continue;
+    if (g.keys.some((k) => n.includes(k))) return g.label;
+  }
+  return "Other Assets";
+}
+
 export interface LibraryFacts {
   categories: number;
   verticals: number;
@@ -61,8 +71,11 @@ export interface LibraryFacts {
   campaignTypeNames: string[];
   perVertical: { name: string; campaigns: number }[];
   perCategory: { name: string; verticals: number; campaigns: number }[];
+  folderTypes: { name: string; folders: number; files: number }[];
   scoped: boolean; // true = limited to what this user can access
 }
+
+const STANDARD_LABELS = FOLDER_KEYWORDS.map((g) => g.label);
 
 /** Roll a list of campaign vertical_ids up into per-vertical and per-category counts. */
 function rollUp(verticalIds: string[], vMap: Map<string, Vert>, cMap: Map<string, Cat>) {
@@ -97,17 +110,17 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
     const scope = await accessScope(user.id);
     campIds = scope.campaignIds;
     if (campIds.length === 0) {
-      return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], perVertical: [], perCategory: [], scoped: true };
+      return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], perVertical: [], perCategory: [], folderTypes: [], scoped: true };
     }
   }
 
   const campQ = admin ? db.from("campaigns").select("vertical_id") : db.from("campaigns").select("vertical_id").in("id", campIds!);
-  const folQ = admin ? db.from("folders").select("*", { count: "exact", head: true }) : db.from("folders").select("*", { count: "exact", head: true }).in("campaign_id", campIds!);
+  const folQ = admin ? db.from("folders").select("id,name") : db.from("folders").select("id,name").in("campaign_id", campIds!);
   const filQ = admin
-    ? db.from("files").select("*", { count: "exact", head: true }).eq("status", "ready")
-    : db.from("files").select("*", { count: "exact", head: true }).eq("status", "ready").in("campaign_id", campIds!);
+    ? db.from("files").select("folder_id").eq("status", "ready")
+    : db.from("files").select("folder_id").eq("status", "ready").in("campaign_id", campIds!);
 
-  const [{ data: camps }, { data: verts }, { data: cats }, { data: ctypes }, fol, fil] = await Promise.all([
+  const [{ data: camps }, { data: verts }, { data: cats }, { data: ctypes }, { data: folRows }, { data: filRows }] = await Promise.all([
     campQ,
     db.from("verticals").select("id,name,category_id").order("name"),
     db.from("categories").select("id,name").order("name"),
@@ -121,17 +134,36 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const verticalIds = (camps ?? []).map((c: { vertical_id: string }) => c.vertical_id);
   const { perVertical, perCategory } = rollUp(verticalIds, vMap, cMap);
 
+  // Group the real folders and files by the standard folder label, so the
+  // assistant can say what actually lives inside each campaign.
+  const folById = new Map<string, string>((folRows ?? []).map((f: { id: string; name: string }) => [f.id, f.name]));
+  const typeFolders = new Map<string, number>();
+  for (const f of (folRows ?? []) as { id: string; name: string }[]) {
+    const lbl = canonicalFolder(f.name);
+    typeFolders.set(lbl, (typeFolders.get(lbl) ?? 0) + 1);
+  }
+  const typeFiles = new Map<string, number>();
+  for (const fi of (filRows ?? []) as { folder_id: string | null }[]) {
+    const name = fi.folder_id ? folById.get(fi.folder_id) : null;
+    const lbl = name ? canonicalFolder(name) : "Other Assets";
+    typeFiles.set(lbl, (typeFiles.get(lbl) ?? 0) + 1);
+  }
+  const folderTypes = STANDARD_LABELS
+    .map((name) => ({ name, folders: typeFolders.get(name) ?? 0, files: typeFiles.get(name) ?? 0 }))
+    .filter((x) => x.folders > 0 || x.files > 0);
+
   return {
     categories: perCategory.length,
     verticals: perVertical.length,
     campaigns: verticalIds.length,
-    folders: fol.count ?? 0,
-    files: fil.count ?? 0,
+    folders: (folRows ?? []).length,
+    files: (filRows ?? []).length,
     categoryNames: perCategory.map((c) => c.name).sort(),
     verticalNames: perVertical.map((v) => v.name).sort(),
     campaignTypeNames: (ctypes ?? []).map((t: { name: string }) => t.name),
     perVertical,
     perCategory,
+    folderTypes,
     scoped: !admin,
   };
 }
@@ -140,10 +172,12 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
 export function factsToString(f: LibraryFacts): string {
   const perV = f.perVertical.map((v) => `${v.name} (${v.campaigns})`).join(", ");
   const perC = f.perCategory.map((c) => `${c.name} (${c.verticals} verticals, ${c.campaigns} campaigns)`).join(", ");
+  const perF = f.folderTypes.map((t) => `${t.name} (${t.files} files)`).join(", ");
   const lines = [
     `${f.scoped ? "You can access" : "The library has"}: ${f.categories} categories, ${f.verticals} verticals, ${f.campaigns} campaigns, ${f.folders} folders${f.files ? `, ${f.files} files` : ""}.`,
     perC ? `Campaigns per category: ${perC}.` : "",
     perV ? `Campaigns per vertical: ${perV}.` : "",
+    perF ? `Every campaign is organized into these folders (library-wide file totals): ${perF}.` : "",
     f.campaignTypeNames.length ? `Campaign types: ${f.campaignTypeNames.join(", ")}.` : "",
   ];
   return lines.filter(Boolean).join("\n");
@@ -151,8 +185,22 @@ export function factsToString(f: LibraryFacts): string {
 
 /** Deterministic answer for count/list questions when AI is off. Runs on the real facts. */
 export function deterministicAnswer(query: string, f: LibraryFacts): string {
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
   const who = f.scoped ? "You can access" : "You have";
+
+  // Greetings and "what can you do" — introduce the assistant.
+  if (/^(hi|hello|hey|yo|hola|sup|greetings|good (morning|afternoon|evening))\b/.test(q)) {
+    return `Hi. I help you find and count campaign assets. ${who} ${f.campaigns} campaigns across ${f.verticals} verticals. Try "agent scripts for auto insurance live transfer" or "how many campaigns in roofing".`;
+  }
+  if (/what can you do|help|how do you work|who are you|what are you/.test(q)) {
+    return `I search the asset library and answer questions about it. Ask me to find assets (for example "data samples for final expense") and I link straight to the folder, or ask counts like "how many campaigns in auto insurance" or "what is in each folder".`;
+  }
+
+  // "what is inside each folder" — list the real folder types with file counts.
+  if (f.folderTypes.length && /(inside|in each|each folder|what.*folder|folder.*have|contain|structure|organi[sz]ed)/.test(q)) {
+    const list = f.folderTypes.map((t) => `${t.name} (${t.files} files)`).join(", ");
+    return `Every campaign is organized into these folders, with the library-wide file counts: ${list}.`;
+  }
 
   // "how many campaigns in <vertical>" / "<category>" — quote the real number.
   const vHit = f.perVertical.find((v) => v.name && q.includes(v.name.toLowerCase()));
