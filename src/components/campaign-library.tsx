@@ -61,21 +61,41 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
   const j = async (u: string) => (await fetch(u)).json();
   const current = stack.length ? stack[stack.length - 1] : null;
 
-  // Restore the folder the user was in, but ONLY when returning from a file
-  // (the file link sets a flag). A fresh visit from the nav starts at the top.
+  // On open we either deep-link (from the AI assistant: ?campaignId=…&folderId=…),
+  // restore the last folder (returning from a file), or start fresh at the top.
   useEffect(() => {
-    try {
-      if (sessionStorage.getItem("wstorage.lib.return") === "1") {
-        const raw = sessionStorage.getItem("wstorage.lib.nav");
-        if (raw) {
-          const s = JSON.parse(raw);
-          setCat(s.cat ?? null); setVert(s.vert ?? null); setCamp(s.camp ?? null);
-          setStack(Array.isArray(s.stack) ? s.stack : []);
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        const campaignId = p.get("campaignId");
+        if (campaignId) {
+          // Resolve the chain by id so the breadcrumb and folders open correctly.
+          const path = await j(`/api/library-path?campaignId=${encodeURIComponent(campaignId)}${p.get("folderId") ? `&folderId=${encodeURIComponent(p.get("folderId")!)}` : ""}`);
+          if (!cancelled && path.campaign) {
+            if (path.category) setCat(path.category);
+            if (path.vertical) setVert(path.vertical);
+            setCamp(path.campaign);
+            setStack(Array.isArray(path.stack) ? path.stack : []);
+          }
+          // Clean the URL so a later refresh starts fresh, not re-deep-linked.
+          try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
+          if (!cancelled) setReady(true);
+          return;
         }
-        sessionStorage.setItem("wstorage.lib.return", "0");
-      }
-    } catch { /* ignore storage errors */ }
-    setReady(true);
+        if (sessionStorage.getItem("wstorage.lib.return") === "1") {
+          const raw = sessionStorage.getItem("wstorage.lib.nav");
+          if (raw) {
+            const s = JSON.parse(raw);
+            setCat(s.cat ?? null); setVert(s.vert ?? null); setCamp(s.camp ?? null);
+            setStack(Array.isArray(s.stack) ? s.stack : []);
+          }
+          sessionStorage.setItem("wstorage.lib.return", "0");
+        }
+      } catch { /* ignore storage / fetch errors */ }
+      if (!cancelled) setReady(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Remember the current location so a round-trip to a file can come back here.

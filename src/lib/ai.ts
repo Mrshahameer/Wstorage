@@ -202,13 +202,31 @@ export function looksLikeQuestion(query: string): boolean {
   return /\b(how many|how much|count|total|number of|list|what('| i)?s|which|do we have|are there|overview|summary|show me all)\b/i.test(query);
 }
 
+// Guess the asset type (which campaign folder) from the raw query, so folder
+// deep-linking works even when no AI key is available.
+function guessAssetType(query: string): string | null {
+  const q = query.toLowerCase();
+  const map: [string, string[]][] = [
+    ["creatives", ["creative", "ad", "ads", "banner", "image", "graphic"]],
+    ["landing pages", ["landing", "lander", "lp"]],
+    ["agent scripts", ["script", "scripts", "pitch", "rebuttal"]],
+    ["verification recordings", ["recording", "recordings", "verification"]],
+    ["data samples", ["data sample", "sample", "samples", "lead sample"]],
+    ["tcpa & compliance", ["tcpa", "compliance", "consent", "disclosure"]],
+  ];
+  for (const [label, keys] of map) {
+    if (keys.some((k) => q.includes(k))) return label;
+  }
+  return null;
+}
+
 function deterministicIntent(query: string): Intent {
   return {
     mode: looksLikeQuestion(query) ? "answer" : "search",
     category: null,
     vertical: null,
     campaign: null,
-    asset_type: null,
+    asset_type: guessAssetType(query),
     keywords: expandTerms(query),
     reply: null,
   };

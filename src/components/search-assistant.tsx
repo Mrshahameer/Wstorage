@@ -9,6 +9,7 @@ interface Result {
   score: number;
   link: string;
   assetHint: string | null;
+  resourceType?: "folder" | "campaign";
 }
 interface Msg {
   role: "user" | "assistant";
@@ -69,7 +70,7 @@ function ResultCard({ r, canShare }: { r: Result; canShare: boolean }) {
   async function createShare() {
     setBusy(true); setMsg(null);
     try {
-      const body: Record<string, unknown> = { name: r.title, resources: [{ type: "campaign", id: r.id }] };
+      const body: Record<string, unknown> = { name: r.title, resources: [{ type: r.resourceType ?? "campaign", id: r.id }] };
       if (pwOn && pw.trim()) body.password = pw.trim();
       const res = await fetch("/api/share-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await res.json();
