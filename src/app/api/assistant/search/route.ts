@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
     // A clear count question always answers in chat, even if the model tagged it
     // as a search, so "how many / total …" never returns cards instead of a number.
     const countQ = /\b(how many|how much|number of|count of|total|do we have|are there)\b/i.test(query) || /^\s*total\b/i.test(query);
-    const answerMode = intent.mode === "answer" || countQ || (!usedAI && looksLikeQuestion(query));
+    // Greetings, meta, and "what is inside each folder" are conversation, not a search.
+    const chatQ = /^(hi|hello|hey|yo|hola|sup|greetings|good (morning|afternoon|evening|day))\b/i.test(query.trim())
+      || /\b(what can you do|who are you|what are you|help me|how do you work)\b/i.test(query)
+      || /(inside|in each|each folder|what.*folder|folder.*have|contain|how.*organi[sz]ed)/i.test(query);
+    const answerMode = intent.mode === "answer" || countQ || chatQ || (!usedAI && looksLikeQuestion(query));
     if (answerMode) {
       const reply = clean(intent.reply || deterministicAnswer(query, facts));
       return NextResponse.json({ reply, results: [], usedAI });
