@@ -26,24 +26,24 @@ export async function POST(req: NextRequest) {
     // Strip markdown emphasis so the chat bubble reads clean.
     const clean = (s: string) => s.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/`/g, "").trim();
 
-    // Answer mode (questions about the library) vs search mode (find a folder).
-    // A clear count question always answers in chat, even if the model tagged it
-    // as a search, so "how many / total …" never returns cards instead of a number.
+    // Decide whether this turn shows result cards or is reply-only (an answer,
+    // a greeting, or a clarifying question). The model picks the mode; a few
+    // hard signals force reply-only so a clear question never returns cards.
     const countQ = /\b(how many|how much|number of|count of|total|do we have|are there)\b/i.test(query) || /^\s*total\b/i.test(query);
-    // Greetings, meta, and "what is inside each folder" are conversation, not a search.
     const chatQ = /^(hi|hello|hey|yo|hola|sup|greetings|good (morning|afternoon|evening|day))\b/i.test(query.trim())
       || /\b(what can you do|who are you|what are you|help me|how do you work)\b/i.test(query)
       || /(inside|in each|each folder|what.*folder|folder.*have|contain|how.*organi[sz]ed)/i.test(query);
-    const answerMode = intent.mode === "answer" || countQ || chatQ || (!usedAI && looksLikeQuestion(query));
-    if (answerMode) {
+    const replyOnly = intent.mode === "answer" || intent.mode === "clarify" || countQ || chatQ || (!usedAI && looksLikeQuestion(query));
+    if (replyOnly) {
       const reply = clean(intent.reply || deterministicAnswer(query, facts));
       return NextResponse.json({ reply, results: [], usedAI });
     }
 
     const results = await searchCampaigns(user, intent, query);
-    const reply = clean(intent.reply || (results.length
-      ? `I found ${results.length} matching campaign${results.length > 1 ? "s" : ""}.`
-      : "I could not find a matching campaign. Try naming the vertical and campaign type, for example 'auto insurance live transfer'."));
+    // Do not let an optimistic model reply stand when nothing matched.
+    const reply = results.length
+      ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
+      : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
 
     return NextResponse.json({ reply, results, usedAI });
   } catch (e) {
