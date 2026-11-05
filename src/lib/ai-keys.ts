@@ -25,8 +25,18 @@ export interface AiSettings {
   groq_model: string;
 }
 
-export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+// gemini_model is a comma-separated chain tried in order (model-level failover).
+// Order is from a live benchmark of JSON intent parsing: flash-lite models are
+// fast, accurate, and free (500 requests/day). Gemma 4 is left out because it
+// has no JSON output mode and answers in prose, which breaks intent parsing.
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest,gemini-flash-latest";
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
+
+/** Split a comma-separated model chain into a clean ordered list. */
+export function modelList(s: string): string[] {
+  const list = (s || "").split(",").map((m) => m.trim()).filter(Boolean);
+  return list.length ? list : [DEFAULT_GEMINI_MODEL.split(",")[0]];
+}
 
 /** List keys without ever returning the secret. */
 export async function listAiKeys(): Promise<AiKeyRow[]> {
@@ -60,10 +70,15 @@ export async function getAiSettings(): Promise<AiSettings> {
     .eq("id", 1)
     .maybeSingle();
   const order = (data?.provider_order as AiProvider[] | undefined)?.filter((p) => AI_PROVIDERS.includes(p));
+  // The 0008 migration seeded a single legacy model that is now slow/overloaded.
+  // Treat it (and an empty value) as "use the benchmarked chain" so the app
+  // self-upgrades with no migration. A real custom value is always honored.
+  const stored = (data?.gemini_model || "").trim();
+  const gemini_model = !stored || stored === "gemini-flash-latest" ? DEFAULT_GEMINI_MODEL : stored;
   return {
     provider_order: order && order.length ? order : ["gemini", "groq"],
     enabled: data?.enabled ?? true,
-    gemini_model: data?.gemini_model || DEFAULT_GEMINI_MODEL,
+    gemini_model,
     groq_model: data?.groq_model || DEFAULT_GROQ_MODEL,
   };
 }

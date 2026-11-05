@@ -155,11 +155,11 @@ export default function AiControlPage() {
 
             <div className="border-t border-slate-100 pt-3">
               <p className="text-xs font-medium text-slate-500">Models (advanced)</p>
-              <p className="mb-2 text-xs text-slate-400">Change these if a provider deprecates a model. No code change needed.</p>
+              <p className="mb-2 text-xs text-slate-400">Gemini accepts a comma-separated chain tried in order. If one is rate-limited or deprecated, the next is used. Best tested: gemini-3.5-flash-lite, gemini-3.1-flash-lite, gemini-flash-latest</p>
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-sm">
-                  <span className="mb-1 block text-slate-600">Gemini model</span>
-                  <input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} className={input + " w-56"} placeholder="gemini-flash-latest" />
+                  <span className="mb-1 block text-slate-600">Gemini models (chain)</span>
+                  <input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} className={input + " w-96 max-w-full"} placeholder="gemini-3.5-flash-lite, gemini-3.1-flash-lite, gemini-flash-latest" />
                 </label>
                 <label className="text-sm">
                   <span className="mb-1 block text-slate-600">Groq model</span>

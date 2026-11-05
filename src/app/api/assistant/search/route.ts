@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ reply, results: [], usedAI });
     }
 
-    const results = await searchCampaigns(user, intent);
+    const results = await searchCampaigns(user, intent, query);
     const reply = clean(intent.reply || (results.length
       ? `I found ${results.length} matching campaign${results.length > 1 ? "s" : ""}.`
       : "I could not find a matching campaign. Try naming the vertical and campaign type, for example 'auto insurance live transfer'."));
