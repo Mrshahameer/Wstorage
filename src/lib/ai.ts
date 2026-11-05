@@ -2,7 +2,7 @@
 // structured search intent. Rotates across the admin's keys and fails over
 // Gemini <-> Groq. If no key works, falls back to a deterministic parser so the
 // assistant never goes down. SERVER ONLY.
-import { getAiSettings, pickKey, markKeyUsed, coolDownKey, type AiProvider } from "@/lib/ai-keys";
+import { getAiSettings, pickKey, markKeyUsed, coolDownKey, modelList, DEFAULT_GEMINI_MODEL, type AiProvider } from "@/lib/ai-keys";
 
 export interface Intent {
   mode: "search" | "answer";
@@ -137,12 +137,15 @@ export async function parseIntent(query: string, history: ChatTurn[], taxonomy: 
   try {
     settings = await getAiSettings();
   } catch {
-    settings = { provider_order: ["gemini", "groq"] as AiProvider[], enabled: true, gemini_model: "gemini-flash-latest", groq_model: "openai/gpt-oss-120b" };
+    settings = { provider_order: ["gemini", "groq"] as AiProvider[], enabled: true, gemini_model: DEFAULT_GEMINI_MODEL, groq_model: "openai/gpt-oss-120b" };
   }
 
   if (settings.enabled) {
     for (const provider of settings.provider_order) {
-      // Try several keys of this provider; each rate-limited key is skipped next time.
+      // For Gemini we try a chain of models with one key before cooling it, since
+      // free-tier quota is per model: if gemma is exhausted, flash-lite may be free.
+      const models = provider === "gemini" ? modelList(settings.gemini_model) : [settings.groq_model];
+      // Try several keys of this provider; each spent key is skipped next time.
       for (let attempt = 0; attempt < 8; attempt++) {
         let picked: { id: string; key: string } | null = null;
         try {
@@ -151,16 +154,24 @@ export async function parseIntent(query: string, history: ChatTurn[], taxonomy: 
           picked = null; // table missing or DB error -> treat as no keys
         }
         if (!picked) break;
-        try {
-          const raw = provider === "gemini"
-            ? await callGemini(settings.gemini_model, picked.key, query, history, sys)
-            : await callGroq(settings.groq_model, picked.key, query, history, sys);
-          await markKeyUsed(picked.id);
-          return { intent: normalize(raw), usedAI: true, provider };
-        } catch (e) {
-          // Rate-limited: long cooldown. Other errors (incl. 503 overload): short cooldown, try next key/provider.
-          await coolDownKey(picked.id, e instanceof RateLimit ? 90 : 15);
+
+        let rateLimited = false;
+        for (const model of models) {
+          try {
+            const raw = provider === "gemini"
+              ? await callGemini(model, picked.key, query, history, sys)
+              : await callGroq(model, picked.key, query, history, sys);
+            await markKeyUsed(picked.id);
+            return { intent: normalize(raw), usedAI: true, provider };
+          } catch (e) {
+            // Rate-limited on this model: a different model on the same key may
+            // still have quota, so keep going down the chain. Other errors
+            // (bad model id, 503 overload) also just fall through to the next.
+            if (e instanceof RateLimit) rateLimited = true;
+          }
         }
+        // Every model failed for this key. Cool it so the next attempt rotates.
+        await coolDownKey(picked.id, rateLimited ? 90 : 15);
       }
     }
   }

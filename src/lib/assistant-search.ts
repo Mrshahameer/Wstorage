@@ -170,7 +170,7 @@ export async function buildTaxonomy(): Promise<string> {
 }
 
 /** Rank campaigns the user can access against the parsed intent. Top 5. */
-export async function searchCampaigns(user: SessionUser, intent: Intent): Promise<AssistantResult[]> {
+export async function searchCampaigns(user: SessionUser, intent: Intent, query = ""): Promise<AssistantResult[]> {
   const db = supabaseAdmin();
 
   let allowed: Set<string> | null = null;
@@ -188,10 +188,18 @@ export async function searchCampaigns(user: SessionUser, intent: Intent): Promis
   const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
   const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
 
-  const hintText = [intent.vertical, intent.campaign, intent.category, intent.asset_type, ...intent.keywords]
+  // Meaningful query tokens, from the raw query plus anything the AI pulled out.
+  const hintText = [query, intent.vertical, intent.campaign, intent.category, intent.asset_type, ...intent.keywords]
     .filter(Boolean)
     .join(" ");
   const terms = new Set<string>([...expandTerms(hintText), ...intent.keywords.map((k) => k.toLowerCase())]);
+  terms.delete("");
+  const group = folderGroupFor(intent.asset_type);
+  const assetToken = (intent.asset_type ?? "").toLowerCase();
+  const qLc = query.toLowerCase().trim();
+  // Tokens that describe the asset type, so they don't penalize a campaign that
+  // holds the folder rather than naming it.
+  const assetTerms = new Set<string>(group ? expandTerms(group.join(" ")) : []);
 
   const scored = (camps ?? [])
     .filter((c: Camp) => !allowed || allowed.has(c.id))
@@ -199,27 +207,37 @@ export async function searchCampaigns(user: SessionUser, intent: Intent): Promis
       const v = vMap.get(c.vertical_id);
       const cat = v ? cMap.get(v.category_id) : undefined;
       const name = c.name.toLowerCase();
-      const hay = `${c.name} ${v?.name ?? ""} ${cat?.name ?? ""}`.toLowerCase();
-      let score = 0;
-      if (intent.campaign && name.includes(intent.campaign.toLowerCase())) score += 0.55;
-      if (intent.vertical && v && v.name.toLowerCase().includes(intent.vertical.toLowerCase())) score += 0.35;
-      if (intent.category && cat && cat.name.toLowerCase().includes(intent.category.toLowerCase())) score += 0.2;
-      // Per-term matches: a hit in the campaign name counts more than in the path.
+      // The haystack already includes the asset type, since a matching folder is
+      // part of the answer even when the campaign name does not say it.
+      const hay = `${c.name} ${v?.name ?? ""} ${cat?.name ?? ""} ${assetToken}`.toLowerCase();
+
+      // Coverage: what fraction of the query's meaningful tokens this result covers.
+      let total = 0, hit = 0;
       terms.forEach((t) => {
         if (t.length < 2) return;
-        if (name.includes(t)) score += 0.14;
-        else if (hay.includes(t)) score += 0.05;
+        total += 1;
+        if (hay.includes(t)) hit += 1;
       });
+      let score = total ? hit / total : 0;
+
+      // Strong, explicit signals snap the score up so an exact match reads ~100%.
+      if (qLc && name && qLc.includes(name)) score = Math.max(score, 0.98);
+      if (intent.campaign && name === intent.campaign.toLowerCase()) score = 1;
+      else if (intent.campaign && name.includes(intent.campaign.toLowerCase())) score = Math.max(score, 0.9);
+
+      // When every non-asset query token is in this campaign's path, it is the one.
+      const coreMiss = [...terms].some((t) => t.length >= 2 && !assetTerms.has(t) && !hay.includes(t));
+      if (!coreMiss && total > 0) score = Math.max(score, 0.95);
+
       return { c, v, cat, score: Math.min(1, score) };
     })
-    .filter((x) => x.score >= 0.2)
+    .filter((x) => x.score >= 0.25)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
   // When the query names an asset type (agent scripts, data samples, creatives…),
   // return the specific folder inside each matching campaign and link straight to
   // it. Otherwise link to the campaign, which opens its folders grouped.
-  const group = folderGroupFor(intent.asset_type);
   const folderByCampaign = new Map<string, Folder>();
   if (group && scored.length) {
     const { data: folders } = await db
