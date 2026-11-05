@@ -29,6 +29,16 @@ function fmtSize(bytes: number): string {
   }
   return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
+function folderEmoji(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("creative")) return "🎨";
+  if (n.includes("landing")) return "🌐";
+  if (n.includes("script")) return "📜";
+  if (n.includes("recording") || n.includes("verification")) return "🎧";
+  if (n.includes("sample") || n.includes("data")) return "🧾";
+  if (n.includes("compliance") || n.includes("tcpa")) return "🛡️";
+  return "📁";
+}
 function iconFor(name: string, ct: string | null): string {
   const e = (name.split(".").pop() || "").toLowerCase();
   const c = (ct || "").toLowerCase();
@@ -186,39 +196,41 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                     className="flex w-full items-center justify-between gap-3 border-b bg-neutral-50/60 px-5 py-3 text-left hover:bg-neutral-100/70"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-neutral-800">{g.campaign || "Files"}</p>
-                      {path && <p className="truncate text-xs text-neutral-400">{path}</p>}
+                      <p className="truncate text-base font-semibold text-slate-900">{g.campaign || "Files"}</p>
+                      {path && <p className="truncate text-xs font-medium text-slate-500">{path}</p>}
                     </div>
-                    <span className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
-                      <span>{g.count}</span>
+                    <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-slate-500">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5">{g.count} files</span>
                       <span className={"transition " + (isCollapsed ? "" : "rotate-90")}>▸</span>
                     </span>
                   </button>
 
                   {!isCollapsed && (
-                    <div>
+                    <div className="divide-y divide-slate-100">
                       {g.folders.map((fg) => (
                         <div key={fg.folder ?? "_"}>
                           {fg.folder && (
-                            <p className="bg-white px-5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-                              {fg.folder}
-                            </p>
+                            <div className="flex items-center gap-2 bg-slate-50 px-5 py-2.5">
+                              <span className="text-sm">{folderEmoji(fg.folder)}</span>
+                              <span className="text-xs font-bold uppercase tracking-wider text-slate-600">{fg.folder}</span>
+                              <span className="text-[11px] font-medium text-slate-400">{fg.files.length}</span>
+                            </div>
                           )}
-                          <ul className="divide-y">
+                          <ul className="divide-y divide-slate-100">
                             {fg.files.map((f) => (
-                              <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                              <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
                                 <div className="flex min-w-0 items-center gap-3">
-                                  <span className="text-lg">{iconFor(f.name, f.content_type)}</span>
+                                  <span className="text-xl">{iconFor(f.name, f.content_type)}</span>
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-medium text-neutral-800">{f.name}</p>
-                                    <p className="text-xs text-neutral-400">{fmtSize(f.size_bytes)}</p>
+                                    <p className="truncate text-sm font-semibold text-slate-900">{f.name}</p>
+                                    <p className="text-xs font-medium text-slate-500">{fmtSize(f.size_bytes)}</p>
                                   </div>
                                 </div>
                                 {data.allowDownload && (
                                   <button
                                     onClick={() => download(f)}
                                     disabled={busyId === f.id}
-                                    className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-50"
+                                    className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50"
                                   >
                                     {busyId === f.id ? "…" : "Download"}
                                   </button>

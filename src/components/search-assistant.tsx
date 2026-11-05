@@ -10,6 +10,7 @@ interface Result {
   link: string;
   assetHint: string | null;
   resourceType?: "folder" | "campaign";
+  note?: string;
 }
 interface Msg {
   role: "user" | "assistant";
@@ -102,7 +103,9 @@ function ResultCard({ r, canShare }: { r: Result; canShare: boolean }) {
             {r.assetHint && <p className="mt-0.5 text-[11px] font-medium text-indigo-500">looking for: {r.assetHint}</p>}
           </div>
         </div>
-        <Badge score={r.score} />
+        {r.note
+          ? <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-200">{r.note}</span>
+          : <Badge score={r.score} />}
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1 border-t border-slate-100 pt-2">
