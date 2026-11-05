@@ -259,11 +259,14 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
   const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
   const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
 
-  // Meaningful query tokens, from the raw query plus anything the AI pulled out.
-  const hintText = [query, intent.vertical, intent.campaign, intent.category, intent.asset_type, ...intent.keywords]
+  // Build the match terms from the model's structured intent when it has any,
+  // so conversational filler ("okay what do we have in …") never pollutes the
+  // score. Only fall back to the raw query when the intent carries nothing.
+  const structured = [intent.vertical, intent.campaign, intent.category, intent.asset_type, ...intent.keywords]
     .filter(Boolean)
     .join(" ");
-  const terms = new Set<string>([...expandTerms(hintText), ...intent.keywords.map((k) => k.toLowerCase())]);
+  const basis = structured.trim() ? structured : query;
+  const terms = new Set<string>([...expandTerms(basis), ...intent.keywords.map((k) => k.toLowerCase())]);
   terms.delete("");
   const group = folderGroupFor(intent.asset_type);
   const assetToken = (intent.asset_type ?? "").toLowerCase();

@@ -187,6 +187,11 @@ const STOP = new Set([
   "the", "a", "an", "and", "or", "for", "of", "to", "in", "on", "me", "i", "need",
   "want", "find", "get", "show", "some", "please", "my", "with", "give", "looking",
   "search", "campaign", "folder", "asset", "assets", "file", "files",
+  // Conversational filler, so a chatty query still scores on its real nouns.
+  "what", "whats", "do", "does", "we", "have", "has", "okay", "ok", "yes", "no",
+  "here", "there", "this", "that", "these", "those", "is", "are", "was", "were",
+  "can", "could", "would", "should", "will", "you", "your", "our", "us", "them",
+  "they", "it", "about", "any", "all", "us", "hey", "hi", "hello", "please",
 ]);
 const SYNONYMS: Record<string, string[]> = {
   "auto insurance": ["car insurance", "vehicle insurance", "auto"],
