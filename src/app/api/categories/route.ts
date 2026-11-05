@@ -12,7 +12,7 @@ export async function GET() {
       .select("id,name,icon,sort")
       .order("sort")
       .order("name");
-    return NextResponse.json({ categories: data ?? [] });
+    return NextResponse.json({ categories: data ?? [] }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } });
   } catch (e) {
     return handleError(e);
   }

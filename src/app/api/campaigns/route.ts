@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       q = q.in("id", s.campaignIds);
     }
     const { data } = await q;
-    return NextResponse.json({ campaigns: data ?? [] });
+    return NextResponse.json({ campaigns: data ?? [] }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } });
   } catch (e) {
     return handleError(e);
   }
