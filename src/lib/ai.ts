@@ -5,7 +5,7 @@
 import { getAiSettings, pickKey, markKeyUsed, coolDownKey, modelList, DEFAULT_GEMINI_MODEL, type AiProvider } from "@/lib/ai-keys";
 
 export interface Intent {
-  mode: "search" | "answer";
+  mode: "search" | "answer" | "clarify";
   category: string | null;
   vertical: string | null;
   campaign: string | null;
@@ -23,22 +23,26 @@ export interface ParseResult {
 function systemPrompt(taxonomy: string, facts: string): string {
   return [
     "You are the Wstorage assistant for a marketing-asset library.",
-    "You help users find campaign folders and assets, AND answer questions about the library.",
+    "Act like a sharp, friendly human teammate. Be brief. One or two short sentences, never a wall of text.",
+    "Prefer to act over to chat. Do not repeat yourself.",
     "",
-    "Decide the mode:",
-    "- mode 'answer': the user asks a question you can answer from the Library facts below",
-    "  (how many campaigns, what verticals exist, list categories, overviews, counts, yes/no).",
-    "  Put the full answer in reply, using the real numbers and names. Set keywords to [].",
-    "- mode 'search': the user wants to find or open a specific campaign, folder, or asset.",
-    "  Fill vertical/campaign/asset_type/keywords. reply is one short line of what you are finding.",
+    "Pick exactly one mode:",
+    "- 'search': the user clearly wants assets or campaigns, and you can name at least a vertical,",
+    "  campaign, or asset type to look for. Fill vertical/campaign/asset_type/keywords. reply is one",
+    "  short line of what you are pulling up, e.g. 'Here are the live transfer agent scripts.'",
+    "- 'answer': a question you can answer from the Library facts (counts, lists, what is in each",
+    "  folder, overviews, yes/no), or a greeting or small talk. Put the answer in reply using the real",
+    "  numbers and names. Keep it to one or two lines. keywords [].",
+    "- 'clarify': the request is too vague or broad to search well, or could mean very different",
+    "  things (for example just 'live transfer' with no verb). Ask ONE short question to narrow it,",
+    "  naming concrete options from the library. keywords []. Example reply: 'Live transfer runs",
+    "  across several verticals. Want a specific one like auto insurance, or an asset like scripts or",
+    "  creatives?' Do not clarify when the request is already clear enough to return useful results.",
     "",
     "Map synonyms: car insurance = auto insurance, live calls = live transfer,",
     "old leads = aged leads, ads/banners/images = creatives, call scripts = agent scripts.",
-    "For a greeting or small talk, set mode 'answer', greet warmly in one line, and offer an",
-    "example of what to ask. For 'what is in each folder' or how the library is organized, use",
-    "the folder list in the facts and answer in mode 'answer'.",
-    "If the message is unrelated to this library, set mode 'answer', keywords [], and politely",
-    "redirect in reply. Stay professional and concise. Never invent folders, numbers, or links.",
+    "If the message is unrelated to this library, set mode 'answer', keywords [], and redirect in one",
+    "short line. Never invent folders, numbers, campaigns, or links. Use only the data below.",
     "",
     "Library facts (the current real data):",
     facts,
@@ -46,7 +50,7 @@ function systemPrompt(taxonomy: string, facts: string): string {
     "Taxonomy (categories > verticals, plus campaign types):",
     taxonomy,
     "",
-    'Return ONLY JSON: {"mode":"search"|"answer","category":string|null,"vertical":string|null,',
+    'Return ONLY JSON: {"mode":"search"|"answer"|"clarify","category":string|null,"vertical":string|null,',
     '"campaign":string|null,"asset_type":string|null,"keywords":string[],"reply":string|null}.',
   ].join("\n");
 }
@@ -57,8 +61,9 @@ function normalize(raw: unknown): Intent {
   const o = (raw ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const kws = Array.isArray(o.keywords) ? o.keywords.filter((k): k is string => typeof k === "string").slice(0, 20) : [];
+  const mode = o.mode === "answer" ? "answer" : o.mode === "clarify" ? "clarify" : "search";
   return {
-    mode: o.mode === "answer" ? "answer" : "search",
+    mode,
     category: str(o.category),
     vertical: str(o.vertical),
     campaign: str(o.campaign),
