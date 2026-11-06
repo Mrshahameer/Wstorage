@@ -185,73 +185,109 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   };
 }
 
+// ---- Param-driven query helpers -------------------------------------------
+// These run the real data lookups the model's chosen action maps to. They take
+// explicit names (from the model, or from the keyword fallback), not the raw
+// query, so there is no guessing here.
+
+type VRow = LibraryFacts["perVertical"][number];
+type CRow = LibraryFacts["perCategory"][number];
+
+/** Resolve a free-text name to a real vertical in the facts. */
+function findVert(f: LibraryFacts, text: string | null): VRow | null {
+  if (!text) return null;
+  const t = text.toLowerCase().trim();
+  return f.perVertical.find((v) => v.name.toLowerCase() === t)
+    ?? f.perVertical.find((v) => { const n = v.name.toLowerCase(); return n.includes(t) || t.includes(n); })
+    ?? f.perVertical.find((v) => v.name.toLowerCase().split(/\s+/).some((w) => w.length >= 5 && t.includes(w)))
+    ?? null;
+}
+/** Resolve a free-text name to a real category in the facts. */
+function findCat(f: LibraryFacts, text: string | null): CRow | null {
+  if (!text) return null;
+  const t = text.toLowerCase().trim();
+  return f.perCategory.find((c) => c.name.toLowerCase() === t)
+    ?? f.perCategory.find((c) => { const n = c.name.toLowerCase(); return n.includes(t) || t.includes(n); })
+    ?? f.perCategory.find((c) => c.name.toLowerCase().split(/\s+/).some((w) => w.length >= 5 && t.includes(w)))
+    ?? null;
+}
+
+export function listCampaigns(f: LibraryFacts, opts: { vertical?: string | null; category?: string | null; limit?: number | null }): string {
+  const v = findVert(f, opts.vertical ?? null);
+  const c = v ? null : findCat(f, opts.category ?? null);
+  let list = f.campaignsList;
+  if (v) list = list.filter((x) => x.vertical === v.name);
+  else if (c) list = list.filter((x) => x.category === c.name);
+  const where = v ? ` in ${v.name}` : c ? ` in ${c.name}` : "";
+  if (!list.length) return `There are no campaigns${where}.`;
+  const n = Math.min(60, Math.max(1, opts.limit ?? 15));
+  const names = list.slice(0, n).map((x) => x.name);
+  const more = list.length > names.length ? `, and ${list.length - names.length} more` : "";
+  return `${list.length} campaign${list.length === 1 ? "" : "s"}${where}. Here ${names.length === 1 ? "is" : "are"} ${names.length}: ${names.join(", ")}${more}.`;
+}
+
+export function listFolders(f: LibraryFacts): string | null {
+  const names = f.folderTypes.map((t) => t.name);
+  return names.length ? `The folders are: ${names.join(", ")}.` : null;
+}
+
+export function listVerticals(f: LibraryFacts, category?: string | null): string | null {
+  const c = findCat(f, category ?? null);
+  const names = c ? (f.verticalsByCategory[c.name] ?? []) : f.verticalNames;
+  if (!names.length) return null;
+  return `${names.length} vertical${names.length === 1 ? "" : "s"}${c ? ` in ${c.name}` : ""}: ${names.join(", ")}.`;
+}
+
+export function listCategories(f: LibraryFacts): string | null {
+  return f.categoryNames.length ? `The ${f.categories} categories are ${f.categoryNames.join(", ")}.` : null;
+}
+
+export function areaSummary(f: LibraryFacts, opts: { vertical?: string | null; category?: string | null }): string | null {
+  const v = findVert(f, opts.vertical ?? null);
+  if (v) return `${v.name} has ${v.campaigns} campaign${v.campaigns === 1 ? "" : "s"} and ${v.files} file${v.files === 1 ? "" : "s"}.`;
+  const c = findCat(f, opts.category ?? null);
+  if (c) {
+    const vs = f.verticalsByCategory[c.name] ?? [];
+    const list = vs.length ? ` Its verticals: ${vs.join(", ")}.` : "";
+    return `${c.name} has ${c.verticals} vertical${c.verticals === 1 ? "" : "s"}, ${c.campaigns} campaign${c.campaigns === 1 ? "" : "s"}, and ${c.files} file${c.files === 1 ? "" : "s"}.${list}`;
+  }
+  return null;
+}
+
 /**
- * Answer list / name / scope questions straight from the real data in facts.
- * Runs whether or not AI is on, so "name 10 campaigns", "name the folders",
- * and "what do we have in insurance" always return actual names and numbers.
- * Returns null when the question is not a data-listing question.
+ * Keyword fallback for when AI is OFF: parse list / name / scope questions from
+ * the raw query and answer from the same real-data helpers. Returns null when
+ * the question is not a data-listing question.
  */
 export function answerData(query: string, f: LibraryFacts): string | null {
   const q = query.toLowerCase().trim();
   const listish = /\b(name|names|list|show|which|what are|whats|give me|tell me)\b/.test(q);
-  const num = () => { const m = q.match(/\b(\d{1,3})\b/); return m ? Math.min(60, Math.max(1, parseInt(m[1], 10))) : null; };
+  const numMatch = q.match(/\b(\d{1,3})\b/);
+  const limit = numMatch ? parseInt(numMatch[1], 10) : null;
 
   const word = (name: string) => name.toLowerCase().split(/\s+/).some((w) => w.length >= 5 && q.includes(w));
   const vertFull = f.perVertical.find((v) => q.includes(v.name.toLowerCase()));
   const catFull = f.perCategory.find((c) => q.includes(c.name.toLowerCase()));
   const vert = vertFull ?? f.perVertical.find((v) => word(v.name));
   const cat = catFull ?? f.perCategory.find((c) => word(c.name));
-  // Vertical is more specific than its category; prefer it when matched by full name.
   const scope = vertFull ? "vert" : catFull ? "cat" : vert ? "vert" : cat ? "cat" : null;
 
-  // List / name campaigns, optionally scoped to a vertical or category.
   if (/campaign/.test(q) && (listish || /\d+\s*(of|campaign)/.test(q))) {
-    let list = f.campaignsList;
-    if (scope === "vert" && vert) list = list.filter((c) => c.vertical === vert.name);
-    else if (scope === "cat" && cat) list = list.filter((c) => c.category === cat.name);
-    if (!list.length) return null;
-    const n = num() ?? 15;
-    const names = list.slice(0, n).map((c) => c.name);
-    const where = scope === "vert" && vert ? ` in ${vert.name}` : scope === "cat" && cat ? ` in ${cat.name}` : "";
-    const more = list.length > names.length ? `, and ${list.length - names.length} more` : "";
-    return `${list.length} campaign${list.length === 1 ? "" : "s"}${where}. Here ${names.length === 1 ? "is" : "are"} ${names.length}: ${names.join(", ")}${more}.`;
+    return listCampaigns(f, {
+      vertical: scope === "vert" ? vert?.name : null,
+      category: scope === "cat" ? cat?.name : null,
+      limit,
+    });
   }
+  if (/folder/.test(q) && listish) return listFolders(f);
+  if (/vertical/.test(q) && listish) return listVerticals(f, scope === "cat" ? cat?.name : null);
+  if (/categor/.test(q) && listish) return listCategories(f);
 
-  // List folders.
-  if (/folder/.test(q) && listish) {
-    const names = f.folderTypes.map((t) => t.name);
-    if (!names.length) return null;
-    return `The folders are: ${names.join(", ")}.`;
-  }
-
-  // List verticals, optionally within a category.
-  if (/vertical/.test(q) && listish) {
-    const names = scope === "cat" && cat ? (f.verticalsByCategory[cat.name] ?? []) : f.verticalNames;
-    if (!names.length) return null;
-    const where = scope === "cat" && cat ? ` in ${cat.name}` : "";
-    return `${names.length} vertical${names.length === 1 ? "" : "s"}${where}: ${names.join(", ")}.`;
-  }
-
-  // List categories.
-  if (/categor/.test(q) && listish) {
-    if (!f.categoryNames.length) return null;
-    return `The ${f.categories} categories are ${f.categoryNames.join(", ")}.`;
-  }
-
-  // Overview of a named area ("what do we have in insurance"). Only when the
-  // query is clearly an overview AND names no asset type, so "scripts in auto
-  // insurance" still goes to search instead of returning a summary.
+  // Overview of a named area, only when clearly an overview and no asset named.
   const assetish = /(creativ|script|recording|verification|\bsample|lead data|landing|lander|complian|tcpa|banner|\bads?\b|pitch|graphic|image|video|audio|doc\b|docs\b|file for|asset)/.test(q);
   const overview = /(what (do|does|do we|can we|have we)\b[^?]*\b(have|hold|got|offer|contain)|what'?s (in|inside|within)|^\s*in\b|inside|within|overview|summary|tell me about|breakdown|rundown)/.test(q);
   if (scope && overview && !assetish) {
-    if (scope === "vert" && vert) {
-      return `${vert.name} has ${vert.campaigns} campaign${vert.campaigns === 1 ? "" : "s"} and ${vert.files} file${vert.files === 1 ? "" : "s"}.`;
-    }
-    if (scope === "cat" && cat) {
-      const vs = f.verticalsByCategory[cat.name] ?? [];
-      const list = vs.length ? ` Its verticals: ${vs.join(", ")}.` : "";
-      return `${cat.name} has ${cat.verticals} vertical${cat.verticals === 1 ? "" : "s"}, ${cat.campaigns} campaign${cat.campaigns === 1 ? "" : "s"}, and ${cat.files} file${cat.files === 1 ? "" : "s"}.${list}`;
-    }
+    return areaSummary(f, { vertical: scope === "vert" ? vert?.name : null, category: scope === "cat" ? cat?.name : null });
   }
 
   return null;
