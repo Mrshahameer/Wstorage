@@ -238,8 +238,12 @@ export function answerData(query: string, f: LibraryFacts): string | null {
     return `The ${f.categories} categories are ${f.categoryNames.join(", ")}.`;
   }
 
-  // "what do we have in <vertical/category>" / overview of a named area.
-  if (scope && /(what.*(have|is|are)|inside|within|\bin\b|overview|summary|tell me about|breakdown)/.test(q)) {
+  // Overview of a named area ("what do we have in insurance"). Only when the
+  // query is clearly an overview AND names no asset type, so "scripts in auto
+  // insurance" still goes to search instead of returning a summary.
+  const assetish = /(creativ|script|recording|verification|\bsample|lead data|landing|lander|complian|tcpa|banner|\bads?\b|pitch|graphic|image|video|audio|doc\b|docs\b|file for|asset)/.test(q);
+  const overview = /(what (do|does|do we|can we|have we)\b[^?]*\b(have|hold|got|offer|contain)|what'?s (in|inside|within)|^\s*in\b|inside|within|overview|summary|tell me about|breakdown|rundown)/.test(q);
+  if (scope && overview && !assetish) {
     if (scope === "vert" && vert) {
       return `${vert.name} has ${vert.campaigns} campaign${vert.campaigns === 1 ? "" : "s"} and ${vert.files} file${vert.files === 1 ? "" : "s"}.`;
     }
