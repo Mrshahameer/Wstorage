@@ -58,8 +58,8 @@ export interface LibraryFacts {
   categoryNames: string[];
   verticalNames: string[];
   campaignTypeNames: string[];
-  perVertical: { name: string; campaigns: number }[];
-  perCategory: { name: string; verticals: number; campaigns: number }[];
+  perVertical: { name: string; campaigns: number; files: number }[];
+  perCategory: { name: string; verticals: number; campaigns: number; files: number }[];
   folderTypes: { name: string; folders: number; files: number }[];
   scoped: boolean; // true = limited to what this user can access
 }
@@ -104,8 +104,8 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const campQ = admin ? db.from("campaigns").select("vertical_id") : db.from("campaigns").select("vertical_id").in("id", campIds!);
   const folQ = admin ? db.from("folders").select("id,name") : db.from("folders").select("id,name").in("campaign_id", campIds!);
   const filQ = admin
-    ? db.from("files").select("folder_id").eq("status", "ready")
-    : db.from("files").select("folder_id").eq("status", "ready").in("campaign_id", campIds!);
+    ? db.from("files").select("folder_id,vertical_id,category_id").eq("status", "ready")
+    : db.from("files").select("folder_id,vertical_id,category_id").eq("status", "ready").in("campaign_id", campIds!);
 
   const [{ data: camps }, { data: verts }, { data: cats }, { data: ctypes }, { data: folRows }, { data: filRows }] = await Promise.all([
     campQ,
@@ -119,7 +119,19 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
   const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
   const verticalIds = (camps ?? []).map((c: { vertical_id: string }) => c.vertical_id);
-  const { perVertical, perCategory } = rollUp(verticalIds, vMap, cMap);
+  const rolled = rollUp(verticalIds, vMap, cMap);
+
+  // Real file counts per vertical and per category, from the files' own columns.
+  const filesByVertName = new Map<string, number>();
+  const filesByCatName = new Map<string, number>();
+  for (const fi of (filRows ?? []) as { vertical_id: string | null; category_id: string | null }[]) {
+    const vn = fi.vertical_id ? vMap.get(fi.vertical_id)?.name : null;
+    if (vn) filesByVertName.set(vn, (filesByVertName.get(vn) ?? 0) + 1);
+    const cn = fi.category_id ? cMap.get(fi.category_id)?.name : null;
+    if (cn) filesByCatName.set(cn, (filesByCatName.get(cn) ?? 0) + 1);
+  }
+  const perVertical = rolled.perVertical.map((v) => ({ ...v, files: filesByVertName.get(v.name) ?? 0 }));
+  const perCategory = rolled.perCategory.map((c) => ({ ...c, files: filesByCatName.get(c.name) ?? 0 }));
 
   // Group the real folders and files by their actual folder name, so the
   // assistant reports whatever folders truly exist. New folder types appear
@@ -157,13 +169,13 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
 
 /** Compact facts block for the AI prompt. Includes per-vertical counts so the AI can quote real numbers. */
 export function factsToString(f: LibraryFacts): string {
-  const perV = f.perVertical.map((v) => `${v.name} (${v.campaigns})`).join(", ");
-  const perC = f.perCategory.map((c) => `${c.name} (${c.verticals} verticals, ${c.campaigns} campaigns)`).join(", ");
+  const perV = f.perVertical.map((v) => `${v.name} (${v.campaigns} campaigns, ${v.files} files)`).join(", ");
+  const perC = f.perCategory.map((c) => `${c.name} (${c.verticals} verticals, ${c.campaigns} campaigns, ${c.files} files)`).join(", ");
   const perF = f.folderTypes.map((t) => `${t.name} (${t.files} files)`).join(", ");
   const lines = [
     `${f.scoped ? "You can access" : "The library has"}: ${f.categories} categories, ${f.verticals} verticals, ${f.campaigns} campaigns, ${f.folders} folders${f.files ? `, ${f.files} files` : ""}.`,
-    perC ? `Campaigns per category: ${perC}.` : "",
-    perV ? `Campaigns per vertical: ${perV}.` : "",
+    perC ? `Per category: ${perC}.` : "",
+    perV ? `Per vertical: ${perV}.` : "",
     perF ? `Every campaign is organized into these folders (library-wide file totals): ${perF}.` : "",
     f.campaignTypeNames.length ? `Campaign types: ${f.campaignTypeNames.join(", ")}.` : "",
   ];
@@ -189,14 +201,20 @@ export function deterministicAnswer(query: string, f: LibraryFacts): string {
     return `Every campaign is organized into these folders, with the library-wide file counts: ${list}.`;
   }
 
-  // "how many campaigns in <vertical>" / "<category>" — quote the real number.
-  const vHit = f.perVertical.find((v) => v.name && q.includes(v.name.toLowerCase()));
-  if (vHit && /campaign|how many|total|number/.test(q)) {
-    return `${vHit.name} has ${vHit.campaigns} campaign${vHit.campaigns === 1 ? "" : "s"}.`;
+  // Match a named vertical or category, by full name or a distinctive word
+  // (so "how much data in bathroom" finds "Bathroom Remodeling").
+  const nameHit = (name: string) => {
+    const n = name.toLowerCase();
+    if (q.includes(n)) return true;
+    return n.split(/\s+/).some((w) => w.length >= 5 && q.includes(w));
+  };
+  const vHit = f.perVertical.find((v) => v.name && nameHit(v.name));
+  if (vHit && /campaign|how many|total|number|file|asset|data|much/.test(q)) {
+    return `${vHit.name} has ${vHit.files} file${vHit.files === 1 ? "" : "s"} across ${vHit.campaigns} campaign${vHit.campaigns === 1 ? "" : "s"}.`;
   }
-  const cHit = f.perCategory.find((c) => c.name && q.includes(c.name.toLowerCase()));
-  if (cHit && /campaign|vertical|how many|total|number/.test(q)) {
-    return `${cHit.name} has ${cHit.verticals} vertical${cHit.verticals === 1 ? "" : "s"} and ${cHit.campaigns} campaign${cHit.campaigns === 1 ? "" : "s"}.`;
+  const cHit = f.perCategory.find((c) => c.name && nameHit(c.name));
+  if (cHit && /campaign|vertical|how many|total|number|file|asset|data|much/.test(q)) {
+    return `${cHit.name} has ${cHit.files} file${cHit.files === 1 ? "" : "s"} across ${cHit.campaigns} campaign${cHit.campaigns === 1 ? "" : "s"} in ${cHit.verticals} vertical${cHit.verticals === 1 ? "" : "s"}.`;
   }
 
   if (/file/.test(q)) return `${who} ${f.files} files across ${f.campaigns} campaigns.`;
