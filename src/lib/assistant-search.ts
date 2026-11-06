@@ -61,6 +61,8 @@ export interface LibraryFacts {
   perVertical: { name: string; campaigns: number; files: number }[];
   perCategory: { name: string; verticals: number; campaigns: number; files: number }[];
   folderTypes: { name: string; folders: number; files: number }[];
+  campaignsList: { name: string; vertical: string; category: string }[];
+  verticalsByCategory: Record<string, string[]>;
   scoped: boolean; // true = limited to what this user can access
 }
 
@@ -97,11 +99,11 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
     const scope = await accessScope(user.id);
     campIds = scope.campaignIds;
     if (campIds.length === 0) {
-      return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], perVertical: [], perCategory: [], folderTypes: [], scoped: true };
+      return { categories: 0, verticals: 0, campaigns: 0, folders: 0, files: 0, categoryNames: [], verticalNames: [], campaignTypeNames: [], perVertical: [], perCategory: [], folderTypes: [], campaignsList: [], verticalsByCategory: {}, scoped: true };
     }
   }
 
-  const campQ = admin ? db.from("campaigns").select("vertical_id") : db.from("campaigns").select("vertical_id").in("id", campIds!);
+  const campQ = admin ? db.from("campaigns").select("id,name,vertical_id") : db.from("campaigns").select("id,name,vertical_id").in("id", campIds!);
   const folQ = admin ? db.from("folders").select("id,name") : db.from("folders").select("id,name").in("campaign_id", campIds!);
   const filQ = admin
     ? db.from("files").select("folder_id,vertical_id,category_id").eq("status", "ready")
@@ -120,6 +122,20 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
   const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
   const verticalIds = (camps ?? []).map((c: { vertical_id: string }) => c.vertical_id);
   const rolled = rollUp(verticalIds, vMap, cMap);
+
+  // Real campaign list (name + its vertical and category) for listing questions.
+  const campaignsList = ((camps ?? []) as Camp[])
+    .map((c) => {
+      const v = vMap.get(c.vertical_id);
+      const cat = v ? cMap.get(v.category_id) : undefined;
+      return { name: c.name, vertical: v?.name ?? "", category: cat?.name ?? "" };
+    })
+    .filter((c) => c.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const vNameToCat = new Map<string, string>();
+  for (const v of (verts ?? []) as Vert[]) { const c = cMap.get(v.category_id); if (c) vNameToCat.set(v.name, c.name); }
+  const verticalsByCategory: Record<string, string[]> = {};
+  for (const v of rolled.perVertical) { const cn = vNameToCat.get(v.name); if (cn) (verticalsByCategory[cn] ??= []).push(v.name); }
 
   // Real file counts per vertical and per category, from the files' own columns.
   const filesByVertName = new Map<string, number>();
@@ -163,8 +179,78 @@ export async function buildFacts(user: SessionUser): Promise<LibraryFacts> {
     perVertical,
     perCategory,
     folderTypes,
+    campaignsList,
+    verticalsByCategory,
     scoped: !admin,
   };
+}
+
+/**
+ * Answer list / name / scope questions straight from the real data in facts.
+ * Runs whether or not AI is on, so "name 10 campaigns", "name the folders",
+ * and "what do we have in insurance" always return actual names and numbers.
+ * Returns null when the question is not a data-listing question.
+ */
+export function answerData(query: string, f: LibraryFacts): string | null {
+  const q = query.toLowerCase().trim();
+  const listish = /\b(name|names|list|show|which|what are|whats|give me|tell me)\b/.test(q);
+  const num = () => { const m = q.match(/\b(\d{1,3})\b/); return m ? Math.min(60, Math.max(1, parseInt(m[1], 10))) : null; };
+
+  const word = (name: string) => name.toLowerCase().split(/\s+/).some((w) => w.length >= 5 && q.includes(w));
+  const vertFull = f.perVertical.find((v) => q.includes(v.name.toLowerCase()));
+  const catFull = f.perCategory.find((c) => q.includes(c.name.toLowerCase()));
+  const vert = vertFull ?? f.perVertical.find((v) => word(v.name));
+  const cat = catFull ?? f.perCategory.find((c) => word(c.name));
+  // Vertical is more specific than its category; prefer it when matched by full name.
+  const scope = vertFull ? "vert" : catFull ? "cat" : vert ? "vert" : cat ? "cat" : null;
+
+  // List / name campaigns, optionally scoped to a vertical or category.
+  if (/campaign/.test(q) && (listish || /\d+\s*(of|campaign)/.test(q))) {
+    let list = f.campaignsList;
+    if (scope === "vert" && vert) list = list.filter((c) => c.vertical === vert.name);
+    else if (scope === "cat" && cat) list = list.filter((c) => c.category === cat.name);
+    if (!list.length) return null;
+    const n = num() ?? 15;
+    const names = list.slice(0, n).map((c) => c.name);
+    const where = scope === "vert" && vert ? ` in ${vert.name}` : scope === "cat" && cat ? ` in ${cat.name}` : "";
+    const more = list.length > names.length ? `, and ${list.length - names.length} more` : "";
+    return `${list.length} campaign${list.length === 1 ? "" : "s"}${where}. Here ${names.length === 1 ? "is" : "are"} ${names.length}: ${names.join(", ")}${more}.`;
+  }
+
+  // List folders.
+  if (/folder/.test(q) && listish) {
+    const names = f.folderTypes.map((t) => t.name);
+    if (!names.length) return null;
+    return `The folders are: ${names.join(", ")}.`;
+  }
+
+  // List verticals, optionally within a category.
+  if (/vertical/.test(q) && listish) {
+    const names = scope === "cat" && cat ? (f.verticalsByCategory[cat.name] ?? []) : f.verticalNames;
+    if (!names.length) return null;
+    const where = scope === "cat" && cat ? ` in ${cat.name}` : "";
+    return `${names.length} vertical${names.length === 1 ? "" : "s"}${where}: ${names.join(", ")}.`;
+  }
+
+  // List categories.
+  if (/categor/.test(q) && listish) {
+    if (!f.categoryNames.length) return null;
+    return `The ${f.categories} categories are ${f.categoryNames.join(", ")}.`;
+  }
+
+  // "what do we have in <vertical/category>" / overview of a named area.
+  if (scope && /(what.*(have|is|are)|inside|within|\bin\b|overview|summary|tell me about|breakdown)/.test(q)) {
+    if (scope === "vert" && vert) {
+      return `${vert.name} has ${vert.campaigns} campaign${vert.campaigns === 1 ? "" : "s"} and ${vert.files} file${vert.files === 1 ? "" : "s"}.`;
+    }
+    if (scope === "cat" && cat) {
+      const vs = f.verticalsByCategory[cat.name] ?? [];
+      const list = vs.length ? ` Its verticals: ${vs.join(", ")}.` : "";
+      return `${cat.name} has ${cat.verticals} vertical${cat.verticals === 1 ? "" : "s"}, ${cat.campaigns} campaign${cat.campaigns === 1 ? "" : "s"}, and ${cat.files} file${cat.files === 1 ? "" : "s"}.${list}`;
+    }
+  }
+
+  return null;
 }
 
 /** Compact facts block for the AI prompt. Includes per-vertical counts so the AI can quote real numbers. */
