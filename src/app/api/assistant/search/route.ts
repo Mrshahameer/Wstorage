@@ -3,7 +3,10 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { handleError } from "@/lib/api";
 import { parseIntent, looksLikeQuestion } from "@/lib/ai";
-import { buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing, answerData } from "@/lib/assistant-search";
+import {
+  buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing,
+  answerData, listCampaigns, listFolders, listVerticals, listCategories, areaSummary,
+} from "@/lib/assistant-search";
 
 const Schema = z.object({
   query: z.string().min(1).max(500),
@@ -25,15 +28,21 @@ export async function POST(req: NextRequest) {
 
     // Strip markdown emphasis so the chat bubble reads clean.
     const clean = (s: string) => s.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/`/g, "").trim();
+    const json = (reply: string, results: unknown[] = []) => NextResponse.json({ reply, results, usedAI });
 
-    // Gap analysis: "what is missing / which campaigns lack recordings" runs a
-    // real query over every campaign's folders instead of a canned reply.
-    const gapQ = /\b(missing|without|lack(?:s|ing)?|incomplete|gaps?|don'?t have|do(?:es)? not have|dont have|not have|empty)\b/i.test(query);
-    if (gapQ) {
+    // Run a search and phrase the reply, shared by the model path and the fallback.
+    const runSearch = async () => {
+      const results = await searchCampaigns(user, intent, query);
+      const reply = results.length
+        ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
+        : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
+      return NextResponse.json({ reply, results, usedAI });
+    };
+
+    // Build the "missing asset" answer (and cards) from a real query.
+    const runMissing = async () => {
       const report = await analyzeMissing(user, intent.asset_type, query);
-      if (!report) {
-        return NextResponse.json({ reply: "Which folder do you mean? For example recordings, agent scripts, creatives, data samples, landing pages, or compliance.", results: [], usedAI });
-      }
+      if (!report) return json("Which folder do you mean? For example recordings, agent scripts, creatives, data samples, landing pages, or compliance.");
       let reply: string;
       if (report.total === 0) reply = "You do not have any campaigns to check.";
       else if (report.missing.length === 0) reply = `All ${report.total} campaigns have ${report.label}.`;
@@ -49,35 +58,44 @@ export async function POST(req: NextRequest) {
         resourceType: "campaign" as const, note: `needs ${report.label}`,
       }));
       return NextResponse.json({ reply, results, usedAI });
+    };
+
+    // AI path: the model chose the action; the server runs the matching query.
+    if (usedAI) {
+      switch (intent.action) {
+        case "search":
+          return await runSearch();
+        case "missing":
+          return await runMissing();
+        case "list_campaigns":
+          return json(listCampaigns(facts, { vertical: intent.vertical, category: intent.category, limit: intent.limit }));
+        case "list_folders":
+          return json(listFolders(facts) ?? "No folders found.");
+        case "list_verticals":
+          return json(listVerticals(facts, intent.category) ?? "No verticals found.");
+        case "list_categories":
+          return json(listCategories(facts) ?? "No categories found.");
+        case "area_summary": {
+          const s = areaSummary(facts, { vertical: intent.vertical, category: intent.category });
+          return json(s ?? clean(intent.reply || deterministicAnswer(query, facts)));
+        }
+        case "clarify":
+        case "answer":
+        default:
+          return json(clean(intent.reply || deterministicAnswer(query, facts)));
+      }
     }
 
-    // List / name / scope questions ("name 10 campaigns", "the folders",
-    // "what do we have in insurance") answered from real data, AI up or not.
+    // AI is off: keyword fallback over the same real-data helpers.
+    const gapQ = /\b(missing|without|lack(?:s|ing)?|incomplete|gaps?|don'?t have|do(?:es)? not have|dont have|not have|empty)\b/i.test(query);
+    if (gapQ) return await runMissing();
+
     const dataReply = answerData(query, facts);
-    if (dataReply) {
-      return NextResponse.json({ reply: dataReply, results: [], usedAI });
-    }
+    if (dataReply) return json(dataReply);
 
-    // Decide whether this turn shows result cards or is reply-only (an answer,
-    // a greeting, or a clarifying question). The model picks the mode; a few
-    // hard signals force reply-only so a clear question never returns cards.
-    const countQ = /\b(how many|how much|number of|count of|total|do we have|are there)\b/i.test(query) || /^\s*total\b/i.test(query);
-    const chatQ = /^(hi|hello|hey|yo|hola|sup|greetings|good (morning|afternoon|evening|day))\b/i.test(query.trim())
-      || /\b(what can you do|who are you|what are you|help me|how do you work)\b/i.test(query)
-      || /(inside|in each|each folder|what.*folder|folder.*have|contain|how.*organi[sz]ed)/i.test(query);
-    const replyOnly = intent.mode === "answer" || intent.mode === "clarify" || countQ || chatQ || (!usedAI && looksLikeQuestion(query));
-    if (replyOnly) {
-      const reply = clean(intent.reply || deterministicAnswer(query, facts));
-      return NextResponse.json({ reply, results: [], usedAI });
-    }
+    if (looksLikeQuestion(query)) return json(clean(intent.reply || deterministicAnswer(query, facts)));
 
-    const results = await searchCampaigns(user, intent, query);
-    // Do not let an optimistic model reply stand when nothing matched.
-    const reply = results.length
-      ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
-      : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
-
-    return NextResponse.json({ reply, results, usedAI });
+    return await runSearch();
   } catch (e) {
     return handleError(e);
   }

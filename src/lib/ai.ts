@@ -4,12 +4,25 @@
 // assistant never goes down. SERVER ONLY.
 import { getAiSettings, pickKey, markKeyUsed, coolDownKey, modelList, DEFAULT_GEMINI_MODEL, type AiProvider } from "@/lib/ai-keys";
 
+// The action the model chooses. The server runs the real query for it.
+export type Action =
+  | "search"          // find assets/campaigns to open
+  | "list_campaigns"  // list campaign names (optionally scoped)
+  | "list_folders"    // list the folder names
+  | "list_verticals"  // list verticals (optionally in a category)
+  | "list_categories" // list the categories
+  | "area_summary"    // summarize a vertical or category
+  | "missing"         // find campaigns missing an asset
+  | "answer"          // answer from the facts (counts, yes/no, greeting, off-topic)
+  | "clarify";        // ask one short question
+
 export interface Intent {
-  mode: "search" | "answer" | "clarify";
+  action: Action;
   category: string | null;
   vertical: string | null;
   campaign: string | null;
   asset_type: string | null;
+  limit: number | null;
   keywords: string[];
   reply: string | null;
 }
@@ -36,23 +49,28 @@ function systemPrompt(taxonomy: string, facts: string): string {
     "- When asked how much data or how many assets something has, give the real number from the",
     "  facts (files per vertical or category), not a vague 'contains creatives and scripts'.",
     "",
-    "Pick exactly one mode:",
-    "- 'search': the user clearly wants assets or campaigns, and you can name at least a vertical,",
-    "  campaign, or asset type to look for. Fill vertical/campaign/asset_type/keywords. reply is one",
-    "  short line of what you are pulling up, e.g. 'Here are the live transfer agent scripts.'",
-    "- 'answer': a question you can answer from the Library facts (counts, lists, what is in each",
-    "  folder, overviews, yes/no), or a greeting or small talk. Put the answer in reply using the real",
-    "  numbers and names. Keep it to one or two lines. keywords [].",
-    "- 'clarify': the request is too vague or broad to search well, or could mean very different",
-    "  things (for example just 'live transfer' with no verb). Ask ONE short question to narrow it,",
-    "  naming concrete options from the library. keywords []. Example reply: 'Live transfer runs",
-    "  across several verticals. Want a specific one like auto insurance, or an asset like scripts or",
-    "  creatives?' Do not clarify when the request is already clear enough to return useful results.",
+    "Decide ONE action and fill its parameters. The server runs the real database",
+    "query for the action you choose, so pick the one that fetches the right data.",
+    "- 'search': the user wants to find or open assets or campaigns. Params: vertical,",
+    "  campaign, asset_type, keywords. reply = one short line of what you are pulling up.",
+    "- 'list_campaigns': the user wants campaign names. Params: vertical or category to",
+    "  scope to (optional), limit (a number if they asked for N, else null).",
+    "- 'list_folders': the user wants the folder names.",
+    "- 'list_verticals': the user wants the verticals. Param: category to scope (optional).",
+    "- 'list_categories': the user wants the categories.",
+    "- 'area_summary': the user wants an overview of one vertical or category (its",
+    "  campaigns and files). Params: vertical OR category.",
+    "- 'missing': the user wants to know which campaigns lack an asset. Param: asset_type.",
+    "- 'answer': any other question answered from the facts (counts, how many, how much,",
+    "  yes/no, what is in each folder, a greeting, or an off-topic redirect). Put the full",
+    "  answer in reply using the real numbers and names. keywords [].",
+    "- 'clarify': the request is too vague to act on (for example just 'live transfer').",
+    "  Ask ONE short question naming concrete options. reply = the question. keywords [].",
     "",
+    "For list and area actions, leave reply null; the server writes the list from real data.",
     "Map synonyms: car insurance = auto insurance, live calls = live transfer,",
     "old leads = aged leads, ads/banners/images = creatives, call scripts = agent scripts.",
-    "If the message is unrelated to this library, set mode 'answer', keywords [], and redirect in one",
-    "short line. Never invent folders, numbers, campaigns, or links. Use only the data below.",
+    "Never invent folders, numbers, campaigns, or links. Use only the data below.",
     "",
     "Library facts (the current real data):",
     facts,
@@ -60,24 +78,32 @@ function systemPrompt(taxonomy: string, facts: string): string {
     "Taxonomy (categories > verticals, plus campaign types):",
     taxonomy,
     "",
-    'Return ONLY JSON: {"mode":"search"|"answer"|"clarify","category":string|null,"vertical":string|null,',
-    '"campaign":string|null,"asset_type":string|null,"keywords":string[],"reply":string|null}.',
+    'Return ONLY JSON: {"action":"search"|"list_campaigns"|"list_folders"|"list_verticals"|',
+    '"list_categories"|"area_summary"|"missing"|"answer"|"clarify","vertical":string|null,',
+    '"campaign":string|null,"category":string|null,"asset_type":string|null,"limit":number|null,',
+    '"keywords":string[],"reply":string|null}.',
   ].join("\n");
 }
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
+const ACTIONS: Action[] = ["search", "list_campaigns", "list_folders", "list_verticals", "list_categories", "area_summary", "missing", "answer", "clarify"];
+
 function normalize(raw: unknown): Intent {
   const o = (raw ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const kws = Array.isArray(o.keywords) ? o.keywords.filter((k): k is string => typeof k === "string").slice(0, 20) : [];
-  const mode = o.mode === "answer" ? "answer" : o.mode === "clarify" ? "clarify" : "search";
+  // Accept the model's action; also tolerate a legacy "mode" field.
+  const raw_action = (o.action ?? o.mode) as string | undefined;
+  const action: Action = ACTIONS.includes(raw_action as Action) ? (raw_action as Action) : (str(o.reply) ? "answer" : "search");
+  const limit = typeof o.limit === "number" && isFinite(o.limit) ? Math.min(60, Math.max(1, Math.round(o.limit))) : null;
   return {
-    mode,
+    action,
     category: str(o.category),
     vertical: str(o.vertical),
     campaign: str(o.campaign),
     asset_type: str(o.asset_type),
+    limit,
     keywords: kws,
     reply: str(o.reply),
   };
@@ -255,12 +281,15 @@ function guessAssetType(query: string): string | null {
 }
 
 function deterministicIntent(query: string): Intent {
+  // AI is down. The route handles routing from the raw query with its keyword
+  // fallback, so here we only mark search vs answer and pull out the asset type.
   return {
-    mode: looksLikeQuestion(query) ? "answer" : "search",
+    action: looksLikeQuestion(query) ? "answer" : "search",
     category: null,
     vertical: null,
     campaign: null,
     asset_type: guessAssetType(query),
+    limit: null,
     keywords: expandTerms(query),
     reply: null,
   };
