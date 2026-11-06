@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { handleError } from "@/lib/api";
 import { parseIntent, looksLikeQuestion } from "@/lib/ai";
-import { buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing } from "@/lib/assistant-search";
+import { buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing, answerData } from "@/lib/assistant-search";
 
 const Schema = z.object({
   query: z.string().min(1).max(500),
@@ -49,6 +49,13 @@ export async function POST(req: NextRequest) {
         resourceType: "campaign" as const, note: `needs ${report.label}`,
       }));
       return NextResponse.json({ reply, results, usedAI });
+    }
+
+    // List / name / scope questions ("name 10 campaigns", "the folders",
+    // "what do we have in insurance") answered from real data, AI up or not.
+    const dataReply = answerData(query, facts);
+    if (dataReply) {
+      return NextResponse.json({ reply: dataReply, results: [], usedAI });
     }
 
     // Decide whether this turn shows result cards or is reply-only (an answer,
