@@ -1,0 +1,39 @@
+# Runs on every pull request and on main. Blocks broken merges before Vercel deploys them.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (the Next build ignores type errors, so this is the real check)
+        run: npx tsc --noEmit
+      - name: Unit tests
+        run: npm test
+
+  assistant-eval:
+    # Live model eval. Runs only when a GEMINI_API_KEY repository secret exists.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Assistant eval
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then echo "No GEMINI_API_KEY secret set, skipping the live eval."; exit 0; fi
+          npm run eval:assistant
