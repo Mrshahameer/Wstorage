@@ -12,10 +12,15 @@ interface Result {
   resourceType?: "folder" | "campaign";
   note?: string;
 }
+interface Group {
+  label: string;
+  results: Result[];
+}
 interface Msg {
   role: "user" | "assistant";
   content: string;
   results?: Result[];
+  groups?: Group[]; // a multi-part ask: one labeled section per part
 }
 
 const GREETING = "Hi. Tell me what you are looking for and I will find the campaign folder.";
@@ -182,7 +187,7 @@ export function SearchAssistant({ canShare }: { canShare: boolean }) {
       });
       const j = await r.json();
       setMsgs((m) => [...m, r.ok
-        ? { role: "assistant", content: j.reply, results: j.results ?? [] }
+        ? { role: "assistant", content: j.reply, results: j.results ?? [], groups: j.groups ?? undefined }
         : { role: "assistant", content: j.error || "Something went wrong. Please try again." }]);
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: "Network error. Please try again." }]);
@@ -251,6 +256,30 @@ export function SearchAssistant({ canShare }: { canShare: boolean }) {
                   {m.results && m.results.length > 0 && (
                     <div className="mt-2.5 space-y-2">
                       {m.results.map((r) => <ResultCard key={r.id} r={r} canShare={canShare} />)}
+                    </div>
+                  )}
+                  {m.groups && m.groups.length > 0 && (
+                    <div className="mt-3 space-y-4">
+                      {m.groups.map((g, gi) => (
+                        <section key={gi}>
+                          <div className="mb-2 flex items-center gap-2">
+                            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white">{gi + 1}</span>
+                            <h3 className="text-sm font-semibold text-slate-800">{g.label}</h3>
+                            <span className="text-xs font-medium text-slate-500">
+                              {g.results.length ? `${g.results.length} result${g.results.length === 1 ? "" : "s"}` : "no match"}
+                            </span>
+                          </div>
+                          {g.results.length > 0 ? (
+                            <div className="space-y-2">
+                              {g.results.map((r) => <ResultCard key={`${gi}-${r.id}`} r={r} canShare={canShare} />)}
+                            </div>
+                          ) : (
+                            <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+                              Nothing in the library matched this part.
+                            </p>
+                          )}
+                        </section>
+                      ))}
                     </div>
                   )}
                 </div>

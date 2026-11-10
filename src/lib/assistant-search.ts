@@ -4,7 +4,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { accessScope, isAdmin } from "@/lib/access";
 import type { SessionUser } from "@/lib/auth";
-import { expandTerms, type Intent } from "@/lib/ai";
+import { expandTerms, type SubRequest } from "@/lib/ai";
 
 export interface AssistantResult {
   id: string;
@@ -371,24 +371,77 @@ export async function buildTaxonomy(): Promise<string> {
   return lines.join("\n") + (types ? `\nCampaign types: ${types}` : "");
 }
 
-/** Rank campaigns the user can access against the parsed intent. Top 5. */
-export async function searchCampaigns(user: SessionUser, intent: Intent, query = ""): Promise<AssistantResult[]> {
-  const db = supabaseAdmin();
+/** Data one search needs, loaded once and shared by every part of a multi-part ask. */
+export interface SearchContext {
+  allowed: Set<string> | null;
+  camps: Camp[];
+  vMap: Map<string, Vert>;
+  cMap: Map<string, Cat>;
+}
 
+export async function loadSearchContext(user: SessionUser): Promise<SearchContext> {
+  const db = supabaseAdmin();
   let allowed: Set<string> | null = null;
   if (!isAdmin(user)) {
     const scope = await accessScope(user.id);
     allowed = new Set(scope.campaignIds);
-    if (allowed.size === 0) return [];
   }
-
   const [{ data: camps }, { data: verts }, { data: cats }] = await Promise.all([
     db.from("campaigns").select("id,name,vertical_id"),
     db.from("verticals").select("id,name,category_id"),
     db.from("categories").select("id,name"),
   ]);
-  const vMap = new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v]));
-  const cMap = new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c]));
+  return {
+    allowed,
+    camps: (camps ?? []) as Camp[],
+    vMap: new Map<string, Vert>((verts ?? []).map((v: Vert) => [v.id, v])),
+    cMap: new Map<string, Cat>((cats ?? []).map((c: Cat) => [c.id, c])),
+  };
+}
+
+/**
+ * Resolve a name the user or model gave ("ACA transfer", "auto", "Auto Insurance")
+ * to the real rows it means. Best match wins: exact name, then containment, then
+ * a word that only one row's name has (so "insurance" alone never picks one
+ * vertical out of many). Returns null when nothing matches, meaning "no scope".
+ */
+function resolveIds<T extends { id: string; name: string }>(want: string | null, rows: T[]): Set<string> | null {
+  if (!want) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const w = norm(want);
+  if (!w) return null;
+  const wWords = new Set(w.split(" "));
+  const freq = new Map<string, number>();
+  for (const r of rows) for (const x of new Set(norm(r.name).split(" "))) freq.set(x, (freq.get(x) ?? 0) + 1);
+  let best = 0;
+  const scores = rows.map((r) => {
+    const n = norm(r.name);
+    let s = 0;
+    if (n === w) s = 100;
+    else if (n.includes(w) || w.includes(n)) s = 50;
+    else for (const x of new Set(n.split(" "))) if (x.length >= 3 && wWords.has(x) && freq.get(x) === 1) s += 10;
+    best = Math.max(best, s);
+    return { id: r.id, s };
+  });
+  if (!best) return null;
+  return new Set(scores.filter((x) => x.s === best).map((x) => x.id));
+}
+
+/** Rank campaigns the user can access against one (sub-)request. Top 5. */
+export async function searchCampaigns(user: SessionUser, intent: SubRequest, query = "", ctx?: SearchContext): Promise<AssistantResult[]> {
+  const db = supabaseAdmin();
+  const { allowed, camps: allCamps, vMap, cMap } = ctx ?? (await loadSearchContext(user));
+  if (allowed && allowed.size === 0) return [];
+
+  // Hard scope: a named vertical (or else category) that matches real data limits
+  // results to it, so "recordings from auto insurance" never returns ACA.
+  const vertIds = resolveIds(intent.vertical, [...vMap.values()]);
+  const catIds = vertIds ? null : resolveIds(intent.category, [...cMap.values()]);
+  const camps = allCamps.filter((c) => {
+    if (vertIds) return vertIds.has(c.vertical_id);
+    if (catIds) { const v = vMap.get(c.vertical_id); return !!v && catIds.has(v.category_id); }
+    return true;
+  });
 
   // Build the match terms from the model's structured intent when it has any,
   // so conversational filler ("okay what do we have in …") never pollutes the
@@ -406,7 +459,7 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
   // holds the folder rather than naming it.
   const assetTerms = aTokens;
 
-  const scored = (camps ?? [])
+  const ranked = camps
     .filter((c: Camp) => !allowed || allowed.has(c.id))
     .map((c: Camp) => {
       const v = vMap.get(c.vertical_id);
@@ -437,8 +490,11 @@ export async function searchCampaigns(user: SessionUser, intent: Intent, query =
       return { c, v, cat, score: Math.min(1, score) };
     })
     .filter((x) => x.score >= 0.25)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
+    .sort((a, b) => b.score - a.score);
+  // Drop weak tail results when there are strong ones, so "ACA creatives" does
+  // not also show Roofing at 25%. Keep anything within 60% of the best score.
+  const best = ranked.length ? ranked[0].score : 0;
+  const scored = ranked.filter((x) => x.score >= Math.max(0.25, best * 0.6)).slice(0, 5);
 
   // When the query names an asset type (agent scripts, data samples, creatives…),
   // return the specific folder inside each matching campaign and link straight to

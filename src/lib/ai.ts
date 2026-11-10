@@ -16,6 +16,15 @@ export type Action =
   | "answer"          // answer from the facts (counts, yes/no, greeting, off-topic)
   | "clarify";        // ask one short question
 
+/** One sub-request inside a multi-part search ("ACA landers + auto insurance recordings"). */
+export interface SubRequest {
+  category: string | null;
+  vertical: string | null;
+  campaign: string | null;
+  asset_type: string | null;
+  keywords: string[];
+}
+
 export interface Intent {
   action: Action;
   category: string | null;
@@ -25,6 +34,9 @@ export interface Intent {
   limit: number | null;
   keywords: string[];
   reply: string | null;
+  // For 'search': one entry per (vertical/campaign, asset) pair the user asked for.
+  // A single-part search has one entry. The server runs a query for each.
+  requests: SubRequest[];
 }
 
 export interface ParseResult {
@@ -33,7 +45,7 @@ export interface ParseResult {
   provider: AiProvider | null;
 }
 
-function systemPrompt(taxonomy: string, facts: string): string {
+export function systemPrompt(taxonomy: string, facts: string): string {
   return [
     "You are the Wstorage assistant for a marketing-asset library.",
     "Act like a sharp, friendly human teammate. Be brief. One or two short sentences, never a wall of text.",
@@ -51,8 +63,14 @@ function systemPrompt(taxonomy: string, facts: string): string {
     "",
     "Decide ONE action and fill its parameters. The server runs the real database",
     "query for the action you choose, so pick the one that fetches the right data.",
-    "- 'search': the user wants to find or open assets or campaigns. Params: vertical,",
-    "  campaign, asset_type, keywords. reply = one short line of what you are pulling up.",
+    "- 'search': the user wants to find or open assets or campaigns. Fill 'requests' with ONE",
+    "  entry per thing they asked for. Each entry: vertical, campaign, category, asset_type,",
+    "  keywords. If they ask for several assets or several verticals in one message, split it:",
+    "  'ACA transfer lander, creatives and recordings' = 3 entries (ACA landing pages, ACA",
+    "  creatives, ACA verification recordings). 'creatives from ACA and recordings from auto",
+    "  insurance' = 2 entries. Treat 'ads previews' as creatives and 'lander' as landing pages;",
+    "  do not add duplicate entries. Use exact vertical names from the taxonomy. A single ask",
+    "  is one entry. reply = one short line of what you are pulling up.",
     "- 'list_campaigns': the user wants campaign names. Params: vertical or category to",
     "  scope to (optional), limit (a number if they asked for N, else null).",
     "- 'list_folders': the user wants the folder names.",
@@ -81,7 +99,8 @@ function systemPrompt(taxonomy: string, facts: string): string {
     'Return ONLY JSON: {"action":"search"|"list_campaigns"|"list_folders"|"list_verticals"|',
     '"list_categories"|"area_summary"|"missing"|"answer"|"clarify","vertical":string|null,',
     '"campaign":string|null,"category":string|null,"asset_type":string|null,"limit":number|null,',
-    '"keywords":string[],"reply":string|null}.',
+    '"keywords":string[],"reply":string|null,"requests":[{"vertical":string|null,',
+    '"campaign":string|null,"category":string|null,"asset_type":string|null,"keywords":string[]}]}.',
   ].join("\n");
 }
 
@@ -89,7 +108,7 @@ type ChatTurn = { role: "user" | "assistant"; content: string };
 
 const ACTIONS: Action[] = ["search", "list_campaigns", "list_folders", "list_verticals", "list_categories", "area_summary", "missing", "answer", "clarify"];
 
-function normalize(raw: unknown): Intent {
+export function normalize(raw: unknown): Intent {
   const o = (raw ?? {}) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const kws = Array.isArray(o.keywords) ? o.keywords.filter((k): k is string => typeof k === "string").slice(0, 20) : [];
@@ -97,16 +116,41 @@ function normalize(raw: unknown): Intent {
   const raw_action = (o.action ?? o.mode) as string | undefined;
   const action: Action = ACTIONS.includes(raw_action as Action) ? (raw_action as Action) : (str(o.reply) ? "answer" : "search");
   const limit = typeof o.limit === "number" && isFinite(o.limit) ? Math.min(60, Math.max(1, Math.round(o.limit))) : null;
-  return {
-    action,
-    category: str(o.category),
-    vertical: str(o.vertical),
-    campaign: str(o.campaign),
-    asset_type: str(o.asset_type),
-    limit,
-    keywords: kws,
-    reply: str(o.reply),
+  const strList = (v: unknown) => (Array.isArray(v) ? v.filter((k): k is string => typeof k === "string").slice(0, 20) : []);
+
+  // Sub-requests for a multi-part search. Capped so one message cannot fan out
+  // into dozens of queries. Duplicates (same vertical/campaign/asset) are dropped.
+  const requests: SubRequest[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(o.requests)) {
+    for (const r of o.requests.slice(0, 8)) {
+      const e = (r ?? {}) as Record<string, unknown>;
+      const sub: SubRequest = {
+        category: str(e.category), vertical: str(e.vertical), campaign: str(e.campaign),
+        asset_type: str(e.asset_type), keywords: strList(e.keywords),
+      };
+      if (!sub.category && !sub.vertical && !sub.campaign && !sub.asset_type && !sub.keywords.length) continue;
+      const key = [sub.vertical, sub.campaign, sub.category, sub.asset_type].map((x) => (x ?? "").toLowerCase()).join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      requests.push(sub);
+    }
+  }
+  const top = {
+    category: str(o.category), vertical: str(o.vertical), campaign: str(o.campaign),
+    asset_type: str(o.asset_type), keywords: kws,
   };
+  // A search with no requests list is a single request from the top-level fields.
+  if (!requests.length && action === "search") requests.push(top);
+
+  return { action, ...top, limit, reply: str(o.reply), requests };
+}
+
+/** A reply with no usable intent counts as a failure, so the next model is tried. */
+function requireIntentJson(o: unknown): unknown {
+  const r = (o ?? {}) as Record<string, unknown>;
+  if (!r.action && !r.mode && !r.reply && !r.requests) throw new Error("unusable model output");
+  return o;
 }
 
 function extractJson(text: string): unknown {
@@ -146,7 +190,7 @@ async function callGemini(model: string, key: string, query: string, history: Ch
   if (!res.ok) throw new Error(`gemini ${res.status}`);
   const j = await res.json();
   const text = j?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  return extractJson(text);
+  return requireIntentJson(extractJson(text));
 }
 
 async function callGroq(model: string, key: string, query: string, history: ChatTurn[], sys: string): Promise<unknown> {
@@ -171,7 +215,7 @@ async function callGroq(model: string, key: string, query: string, history: Chat
   if (!res.ok) throw new Error(`groq ${res.status}`);
   const j = await res.json();
   const text = j?.choices?.[0]?.message?.content ?? "{}";
-  return extractJson(text);
+  return requireIntentJson(extractJson(text));
 }
 
 /** Parse a query into intent, trying the admin's AI keys with failover, else deterministic. */
@@ -264,33 +308,44 @@ export function looksLikeQuestion(query: string): boolean {
 
 // Guess the asset type (which campaign folder) from the raw query, so folder
 // deep-linking works even when no AI key is available.
-function guessAssetType(query: string): string | null {
+const ASSET_MAP: [string, string[]][] = [
+  ["creatives", ["creative", "ads", "banner", "image", "graphic", "ad preview"]],
+  ["landing pages", ["landing", "lander", "lp"]],
+  ["agent scripts", ["script", "pitch", "rebuttal"]],
+  ["verification recordings", ["recording", "verification"]],
+  ["data samples", ["data sample", "sample", "lead sample"]],
+  ["tcpa & compliance", ["tcpa", "compliance", "consent", "disclosure"]],
+];
+
+/** Every asset type named in the query, in order, without duplicates. */
+function guessAssetTypes(query: string): string[] {
   const q = query.toLowerCase();
-  const map: [string, string[]][] = [
-    ["creatives", ["creative", "ad", "ads", "banner", "image", "graphic"]],
-    ["landing pages", ["landing", "lander", "lp"]],
-    ["agent scripts", ["script", "scripts", "pitch", "rebuttal"]],
-    ["verification recordings", ["recording", "recordings", "verification"]],
-    ["data samples", ["data sample", "sample", "samples", "lead sample"]],
-    ["tcpa & compliance", ["tcpa", "compliance", "consent", "disclosure"]],
-  ];
-  for (const [label, keys] of map) {
-    if (keys.some((k) => q.includes(k))) return label;
+  const found: string[] = [];
+  for (const [label, keys] of ASSET_MAP) {
+    if (keys.some((k) => new RegExp(`\\b${k}`).test(q)) && !found.includes(label)) found.push(label);
   }
-  return null;
+  return found;
 }
 
 function deterministicIntent(query: string): Intent {
-  // AI is down. The route handles routing from the raw query with its keyword
-  // fallback, so here we only mark search vs answer and pull out the asset type.
+  // AI is down. Mark search vs answer and split out every asset type named, so
+  // "ACA landers, creatives and recordings" still becomes three sub-requests.
+  const assets = guessAssetTypes(query);
+  const assetWords = new Set(ASSET_MAP.flatMap(([label, keys]) => [...label.split(/\W+/), ...keys]));
+  // Shared context words (vertical, campaign type) for every sub-request.
+  const context = expandTerms(query).filter((w) => !assetWords.has(w));
+  const requests: SubRequest[] = assets.length
+    ? assets.map((a) => ({ category: null, vertical: null, campaign: null, asset_type: a, keywords: context }))
+    : [{ category: null, vertical: null, campaign: null, asset_type: null, keywords: expandTerms(query) }];
   return {
     action: looksLikeQuestion(query) ? "answer" : "search",
     category: null,
     vertical: null,
     campaign: null,
-    asset_type: guessAssetType(query),
+    asset_type: assets[0] ?? null,
     limit: null,
     keywords: expandTerms(query),
     reply: null,
+    requests,
   };
 }

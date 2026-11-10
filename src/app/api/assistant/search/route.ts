@@ -5,8 +5,21 @@ import { handleError } from "@/lib/api";
 import { parseIntent, looksLikeQuestion } from "@/lib/ai";
 import {
   buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing,
-  answerData, listCampaigns, listFolders, listVerticals, listCategories, areaSummary,
+  answerData, listCampaigns, listFolders, listVerticals, listCategories, areaSummary, loadSearchContext,
+  type AssistantResult,
 } from "@/lib/assistant-search";
+import type { SubRequest } from "@/lib/ai";
+
+const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+/** "ACA (Obamacare) · Landing Pages": the area asked about, then the real folder found. */
+function groupLabel(r: SubRequest, results: AssistantResult[]): string {
+  const top = results[0];
+  const pathParts = top ? top.path.split("›").map((p) => p.trim()) : [];
+  const area = r.campaign || r.vertical || r.category || pathParts[1] || "";
+  const asset = top && top.resourceType === "folder" && top.assetHint ? top.assetHint : r.asset_type ? titleCase(r.asset_type) : "";
+  return [area, asset].filter(Boolean).join(" · ") || "Results";
+}
 
 const Schema = z.object({
   query: z.string().min(1).max(500),
@@ -31,12 +44,49 @@ export async function POST(req: NextRequest) {
     const json = (reply: string, results: unknown[] = []) => NextResponse.json({ reply, results, usedAI });
 
     // Run a search and phrase the reply, shared by the model path and the fallback.
+    // A multi-part ask ("ACA landers, creatives and recordings", or "ACA creatives
+    // and auto insurance recordings") runs one real query per part, in parallel,
+    // and returns one labeled group per part.
     const runSearch = async () => {
-      const results = await searchCampaigns(user, intent, query);
-      const reply = results.length
-        ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
-        : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
-      return NextResponse.json({ reply, results, usedAI });
+      const reqs: SubRequest[] = intent.requests.length ? intent.requests : [intent];
+      const ctx = await loadSearchContext(user);
+
+      if (reqs.length === 1) {
+        const results = await searchCampaigns(user, reqs[0], query, ctx);
+        const reply = results.length
+          ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
+          : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
+        return NextResponse.json({ reply, results, usedAI });
+      }
+
+      // With AI each part carries its own fields, so score it on those alone. Without
+      // AI the parts share the message's context words, so keep the full query.
+      const partQuery = (r: SubRequest) =>
+        usedAI ? [r.campaign, r.vertical, r.category, r.asset_type, ...r.keywords].filter(Boolean).join(" ") : query;
+      const all = await Promise.all(reqs.map((r) => searchCampaigns(user, r, partQuery(r), ctx)));
+
+      const groups: { key: string; label: string; results: AssistantResult[] }[] = [];
+      reqs.forEach((r, i) => {
+        const results = all[i];
+        const key = results.map((x) => x.id).join(",");
+        // Two parts that resolve to the same folders (creatives + ads previews) show once.
+        if (key && groups.some((g) => g.key === key)) return;
+        groups.push({ key, label: groupLabel(r, results), results });
+      });
+
+      const found = groups.filter((g) => g.results.length);
+      const missing = groups.filter((g) => !g.results.length).map((g) => g.label);
+      if (!found.length) {
+        return NextResponse.json({ reply: "I did not find a match for any of those. Try naming the vertical for each asset, like 'ACA creatives and auto insurance recordings'.", results: [], usedAI });
+      }
+      let reply = clean(intent.reply || `Here is what I found for ${found.length} of your ${groups.length} requests.`);
+      if (missing.length) reply += ` Nothing matched for ${missing.join(", ")}.`;
+      return NextResponse.json({
+        reply,
+        results: [],
+        groups: groups.map(({ label, results }) => ({ label, results })),
+        usedAI,
+      });
     };
 
     // Build the "missing asset" answer (and cards) from a real query.
