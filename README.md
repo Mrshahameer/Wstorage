@@ -1,20 +1,29 @@
 # Wstorage
 
-Internal Digital Asset Management. Next.js 15 (App Router) + Supabase (Auth + Postgres) + Backblaze B2 (S3-compatible) storage, with an encrypted, dashboard-managed multi-key system.
+Internal asset library for a lead-generation team: campaign creatives, landing pages, agent
+scripts, call recordings, data samples and compliance docs, organized as
+Category › Vertical › Campaign › Folder › Files.
+
+**New here (human or agent)? Read [`CLAUDE.md`](CLAUDE.md) first**, then
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system, data model and every API
+endpoint. Progress and next steps: [`docs/PROGRESS.md`](docs/PROGRESS.md).
 
 ## What's in this build
 
-**Working end-to-end:**
-- Invite-only auth + RBAC scaffold (`super_admin` / `admin` / `employee`).
-- **Storage abstraction layer** (`src/lib/storage`) — the app never talks to B2 directly. Add R2/S3/GCS later by implementing one interface.
-- **Backblaze B2 provider** over the S3-compatible API (presigned upload + presigned download).
-- **Dashboard-managed storage keys** — add multiple B2 keys, mark one active, revoke the old one. Secrets are AES-256-GCM encrypted before hitting the DB and are never returned to the browser.
-- **Presigned direct upload** — large files go browser → B2, bypassing Vercel's 4.5 MB function body limit. Client computes SHA-256 for duplicate detection.
-- **Signed-URL downloads** — every download goes through an authenticated route that logs the event and 307-redirects to a 60–300s signed URL. No permanent links ever leave the server.
-- Full Postgres schema + RLS (`supabase/migrations`).
-
-**Scaffolded / plug-in points (tables + APIs exist, UI is minimal):**
-Analytics widgets, version-restore UI, folders tree, collections, favorites UI, user-management UI, bulk operations. The data layer for these already records everything (`activity_logs`, `downloads`, `file_versions`).
+- Next.js 15 (App Router) on Vercel, Supabase (Auth + Postgres, own `wstorage` schema).
+- Storage through one provider interface (`src/lib/storage`): Cloudflare R2 and Backblaze B2,
+  with dashboard-managed, AES-256-GCM encrypted keys. Presigned direct uploads and logged,
+  signed downloads.
+- Roles: client, employee, BD manager, manager, admin, super admin, plus granular grants on
+  categories, verticals, campaigns and folders.
+- Campaign Library with deep links, a filterable asset search, asset pages with previews.
+- Public share links (files, folders, campaigns, verticals, categories), optional password,
+  grouped by campaign and folder.
+- AI Search Assistant: the model reads the user's library catalog and calls tools that run real
+  queries, so one message can ask for several assets across campaigns. Gemini first, Groq
+  backup, unlimited admin-managed keys with failover, keyword mode when no model is reachable,
+  usage and key health in Settings › AI Control.
+- Tests: `npm test` (offline), `npm run eval:assistant` (live model eval).
 
 ## Setup
 

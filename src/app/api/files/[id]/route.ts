@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getActiveProvider } from "@/lib/storage";
 import { handleError } from "@/lib/api";
 import { canFile } from "@/lib/permissions";
+import { invalidateCatalog } from "@/lib/assistant/data";
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -43,6 +44,7 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    invalidateCatalog(); // the assistant sees this change right away
     const user = await requireRole("admin"); // Admin or Super Admin
     const { id } = await ctx.params;
     const db = supabaseAdmin();

@@ -1,151 +1,109 @@
-import { NextRequest, NextResponse } from "next/server";
+// AI Search Assistant endpoint. The model reads the user's catalog and calls
+// tools that run real queries. If no model is reachable, keyword mode answers
+// from the same catalog and tools. Every reply says which path produced it.
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { handleError } from "@/lib/api";
-import { parseIntent, looksLikeQuestion } from "@/lib/ai";
-import {
-  buildTaxonomy, buildFacts, factsToString, deterministicAnswer, searchCampaigns, analyzeMissing,
-  answerData, listCampaigns, listFolders, listVerticals, listCategories, areaSummary, loadSearchContext,
-  type AssistantResult,
-} from "@/lib/assistant-search";
-import type { SubRequest } from "@/lib/ai";
+import { getAiSettings, pickKey, markKeyUsed, coolDownKey, modelList } from "@/lib/ai-keys";
+import { catalogText } from "@/lib/assistant/catalog";
+import { loadCatalog, supabaseFileSource } from "@/lib/assistant/data";
+import { runAgent, systemPrompt, type CallLog, type Provider } from "@/lib/assistant/agent";
+import { geminiSession, groqSession, type ChatTurn } from "@/lib/assistant/providers";
+import { runTool, summarizeSections, TOOL_DECLARATIONS, type ToolCall } from "@/lib/assistant/tools";
+import { planFallback } from "@/lib/assistant/fallback";
+import { saveCallLogs } from "@/lib/assistant/log";
+import { MAX_QUERY_CHARS, type AssistantResponse, type Section } from "@/lib/assistant/types";
 
-const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+export const maxDuration = 60;
 
-/** "ACA (Obamacare) · Landing Pages": the area asked about, then the real folder found. */
-function groupLabel(r: SubRequest, results: AssistantResult[]): string {
-  const top = results[0];
-  const pathParts = top ? top.path.split("›").map((p) => p.trim()) : [];
-  const area = r.campaign || r.vertical || r.category || pathParts[1] || "";
-  const asset = top && top.resourceType === "folder" && top.assetHint ? top.assetHint : r.asset_type ? titleCase(r.asset_type) : "";
-  return [area, asset].filter(Boolean).join(" · ") || "Results";
-}
-
-const Schema = z.object({
-  query: z.string().min(1).max(500),
+const Body = z.object({
+  query: z
+    .string()
+    .trim()
+    .min(1, "Type a message first.")
+    .max(MAX_QUERY_CHARS, `That message is too long. Please keep it under ${MAX_QUERY_CHARS.toLocaleString()} characters.`),
   history: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(2000) }))
-    .max(12)
+    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
+    .max(40)
     .optional()
     .default([]),
 });
 
+// Plain chat text: strip markdown the bubble would show literally, and any
+// internal catalog ref (C12) the model let slip.
+const clean = (s: string) =>
+  s
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/(^|\s)\*(\S.*?)\*/g, "$1$2")
+    .replace(/`/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/\(\s*C\d{1,4}\s*\)\s?|\bC\d{1,4}\b\s*[–—:|-]\s*/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
-    const { query, history } = Schema.parse(await req.json());
+    const parsed = Body.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "That request was not valid." }, { status: 400 });
+    }
+    const { query } = parsed.data;
+    const history: ChatTurn[] = parsed.data.history.slice(-10).map((h) => ({ role: h.role, content: h.content.slice(0, 2000) }));
+    const t0 = Date.now();
 
-    const hist = history as { role: "user" | "assistant"; content: string }[];
-    const [taxonomy, facts] = await Promise.all([buildTaxonomy(), buildFacts(user)]);
-    const { intent, usedAI } = await parseIntent(query, hist, taxonomy, factsToString(facts));
+    const catalog = await loadCatalog(user);
+    const src = supabaseFileSource();
+    const exec = (c: ToolCall) => runTool(c, catalog, src);
+    const respond = (body: AssistantResponse) => NextResponse.json(body);
 
-    // Strip markdown emphasis so the chat bubble reads clean.
-    const clean = (s: string) => s.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/`/g, "").trim();
-    const json = (reply: string, results: unknown[] = []) => NextResponse.json({ reply, results, usedAI });
+    let failure: { code: string; reason: string };
+    let settings: Awaited<ReturnType<typeof getAiSettings>> | null = null;
+    try { settings = await getAiSettings(); } catch { settings = null; }
 
-    // Run a search and phrase the reply, shared by the model path and the fallback.
-    // A multi-part ask ("ACA landers, creatives and recordings", or "ACA creatives
-    // and auto insurance recordings") runs one real query per part, in parallel,
-    // and returns one labeled group per part.
-    const runSearch = async () => {
-      const reqs: SubRequest[] = intent.requests.length ? intent.requests : [intent];
-      const ctx = await loadSearchContext(user);
-
-      if (reqs.length === 1) {
-        const results = await searchCampaigns(user, reqs[0], query, ctx);
-        const reply = results.length
-          ? clean(intent.reply || `Here ${results.length === 1 ? "is 1 match" : `are ${results.length} matches`}.`)
-          : "I did not find a match for that. Want to try a vertical and asset, like 'auto insurance live transfer scripts'?";
-        return NextResponse.json({ reply, results, usedAI });
-      }
-
-      // With AI each part carries its own fields, so score it on those alone. Without
-      // AI the parts share the message's context words, so keep the full query.
-      const partQuery = (r: SubRequest) =>
-        usedAI ? [r.campaign, r.vertical, r.category, r.asset_type, ...r.keywords].filter(Boolean).join(" ") : query;
-      const all = await Promise.all(reqs.map((r) => searchCampaigns(user, r, partQuery(r), ctx)));
-
-      const groups: { key: string; label: string; results: AssistantResult[] }[] = [];
-      reqs.forEach((r, i) => {
-        const results = all[i];
-        const key = results.map((x) => x.id).join(",");
-        // Two parts that resolve to the same folders (creatives + ads previews) show once.
-        if (key && groups.some((g) => g.key === key)) return;
-        groups.push({ key, label: groupLabel(r, results), results });
+    if (!settings) {
+      failure = { code: "not_ready", reason: "AI is not set up yet. Run migration 0008 and add a key in AI Control." };
+    } else if (!settings.enabled) {
+      failure = { code: "disabled", reason: "AI is turned off in AI Control." };
+    } else {
+      const s = settings;
+      const logs: CallLog[] = [];
+      const r = await runAgent(systemPrompt(catalogText(catalog), new Date().toISOString().slice(0, 10)), history, query, {
+        order: s.provider_order as Provider[],
+        models: (p) => (p === "gemini" ? modelList(s.gemini_model) : [s.groq_model]),
+        pickKey: (p) => pickKey(p),
+        markKeyUsed,
+        coolDownKey,
+        session: (p, model, key, system, hist, u) =>
+          p === "gemini" ? geminiSession(model, key, system, hist, u, TOOL_DECLARATIONS) : groqSession(model, key, system, hist, u, TOOL_DECLARATIONS),
+        runTool: exec,
+        log: (e) => logs.push(e),
       });
-
-      const found = groups.filter((g) => g.results.length);
-      const missing = groups.filter((g) => !g.results.length).map((g) => g.label);
-      if (!found.length) {
-        return NextResponse.json({ reply: "I did not find a match for any of those. Try naming the vertical for each asset, like 'ACA creatives and auto insurance recordings'.", results: [], usedAI });
+      after(() => saveCallLogs(user.id, logs)); // written after the reply is sent
+      if (r.ok) {
+        return respond({
+          reply: clean(r.reply ?? "") || summarizeSections(r.sections ?? []),
+          sections: r.sections ?? [],
+          meta: { mode: "ai", provider: r.provider, model: r.model, steps: r.steps, ms: Date.now() - t0 },
+        });
       }
-      let reply = clean(intent.reply || `Here is what I found for ${found.length} of your ${groups.length} requests.`);
-      if (missing.length) reply += ` Nothing matched for ${missing.join(", ")}.`;
-      return NextResponse.json({
-        reply,
-        results: [],
-        groups: groups.map(({ label, results }) => ({ label, results })),
-        usedAI,
-      });
-    };
-
-    // Build the "missing asset" answer (and cards) from a real query.
-    const runMissing = async () => {
-      const report = await analyzeMissing(user, intent.asset_type, query);
-      if (!report) return json("Which folder do you mean? For example recordings, agent scripts, creatives, data samples, landing pages, or compliance.");
-      let reply: string;
-      if (report.total === 0) reply = "You do not have any campaigns to check.";
-      else if (report.missing.length === 0) reply = `All ${report.total} campaigns have ${report.label}.`;
-      else {
-        const names = report.missing.map((m) => m.name);
-        const shown = names.slice(0, 12).join(", ");
-        const extra = names.length > 12 ? `, and ${names.length - 12} more` : "";
-        reply = `${report.missing.length} of ${report.total} campaigns are missing ${report.label}: ${shown}${extra}.`;
-      }
-      const results = report.missing.slice(0, 8).map((m) => ({
-        id: m.id, title: m.name, path: m.path, score: 0,
-        link: `/library?campaignId=${m.id}`, assetHint: null,
-        resourceType: "campaign" as const, note: `needs ${report.label}`,
-      }));
-      return NextResponse.json({ reply, results, usedAI });
-    };
-
-    // AI path: the model chose the action; the server runs the matching query.
-    if (usedAI) {
-      switch (intent.action) {
-        case "search":
-          return await runSearch();
-        case "missing":
-          return await runMissing();
-        case "list_campaigns":
-          return json(listCampaigns(facts, { vertical: intent.vertical, category: intent.category, limit: intent.limit }));
-        case "list_folders":
-          return json(listFolders(facts) ?? "No folders found.");
-        case "list_verticals":
-          return json(listVerticals(facts, intent.category) ?? "No verticals found.");
-        case "list_categories":
-          return json(listCategories(facts) ?? "No categories found.");
-        case "area_summary": {
-          const s = areaSummary(facts, { vertical: intent.vertical, category: intent.category });
-          return json(s ?? clean(intent.reply || deterministicAnswer(query, facts)));
-        }
-        case "clarify":
-        case "answer":
-        default:
-          return json(clean(intent.reply || deterministicAnswer(query, facts)));
-      }
+      failure = { code: r.code ?? "error", reason: r.reason ?? "The AI request failed." };
     }
 
-    // AI is off: keyword fallback over the same real-data helpers.
-    const gapQ = /\b(missing|without|lack(?:s|ing)?|incomplete|gaps?|don'?t have|do(?:es)? not have|dont have|not have|empty)\b/i.test(query);
-    if (gapQ) return await runMissing();
-
-    const dataReply = answerData(query, facts);
-    if (dataReply) return json(dataReply);
-
-    if (looksLikeQuestion(query)) return json(clean(intent.reply || deterministicAnswer(query, facts)));
-
-    return await runSearch();
+    // Keyword mode: same catalog, same tools, plainer wording.
+    const plan = planFallback(catalog, query);
+    let reply: string;
+    let sections: Section[] = [];
+    if (plan.kind === "answer") {
+      reply = plan.reply;
+      sections = plan.sections ?? [];
+    } else {
+      for (const call of plan.calls) sections.push(...(await exec(call)).sections);
+      reply = summarizeSections(sections);
+    }
+    return respond({ reply, sections, meta: { mode: "keyword", ms: Date.now() - t0, reasonCode: failure.code, reason: failure.reason } });
   } catch (e) {
     return handleError(e);
   }

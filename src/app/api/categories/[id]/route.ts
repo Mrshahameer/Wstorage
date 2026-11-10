@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
+import { invalidateCatalog } from "@/lib/assistant/data";
 
 export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    invalidateCatalog(); // the assistant sees this change right away
     await requireRole("admin");
     const { id } = await ctx.params;
     const db = supabaseAdmin();
@@ -26,6 +28,7 @@ export async function PATCH(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    invalidateCatalog(); // the assistant sees this change right away
     await requireRole("admin");
     const { id } = await ctx.params;
     const { name } = await req.json();

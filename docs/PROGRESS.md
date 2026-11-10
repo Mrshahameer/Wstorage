@@ -4,13 +4,14 @@
 > and what to do next. Full detail lives in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 > After finishing a task: tick its box, and add a dated line under **Session log**.
 
-- **Current phase:** Live taxonomy seeded (3 categories → 35 verticals → 89 campaigns → 650 resource
-  folders). Campaign Library now navigates Category›Vertical›Campaign›Folder›assets with a
-  super-admin Upload button inside each folder. Verified visually end-to-end.
-- **Next task:** Await owner's spec for what goes inside each folder / further per-mode tweaks.
-  Standing requirement: **production quality + scale to 1000s of users**, provider-extensible,
-  never break existing (see memory wstorage-scalability).
-- **Last updated:** 2026-08-21
+- **Current phase:** AI Search Assistant rebuilt on a catalog + native tool calling (Phases 0, 1,
+  2 and 4 of the assistant plan). Multi-part asks across campaigns, file-level results, gap
+  queries, keyword fallback, per-reply status line, AI Control usage and key tests, chat history
+  that survives tab switches. Architecture and every endpoint documented in `docs/ARCHITECTURE.md`.
+- **Next task:** Owner runs migration `0009_ai_observability.sql`, adds Gemini keys from several
+  Google projects in AI Control, and tests the assistant. Then: mobile navigation (the sidebar is
+  hidden below the md breakpoint and there is no mobile menu yet).
+- **Last updated:** 2026-11-10
 - **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
   `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
   key is set in `.env.local` — or re-add the storage key so it re-encrypts with the current key.
@@ -103,6 +104,13 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
+
+- **2026-11-10 (session 7)** — Assistant rebuilt: access-scoped catalog in the model's context,
+  Gemini/Groq native tool calling (get_assets, find_missing, search_files, show_campaigns),
+  failover with per-model circuit breaker, keyword mode on the same tools, ai_calls/ai_feedback
+  (migration 0009), AI Control usage/test/bulk keys, persistent chat, 4,000-char limit with a
+  friendly error, build version in the sidebar. 25 unit tests + live eval. Docs: CLAUDE.md,
+  docs/ARCHITECTURE.md.
 
 - **2026-08-21 (session 6)** — Reset live DB to 3 categories and seeded the full taxonomy: 35
   verticals, 89 mode campaigns, 650 resource folders. Added the folder level to Campaign Library
