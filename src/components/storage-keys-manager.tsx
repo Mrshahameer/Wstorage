@@ -51,7 +51,7 @@ export function StorageKeysManager() {
   return (
     <div className="space-y-8">
       <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
           <div>
             <h2 className="font-medium text-indigo-900">Enable browser uploads</h2>
             <p className="text-sm text-indigo-700/80 mt-1">
@@ -116,7 +116,8 @@ export function StorageKeysManager() {
       <section>
         <h2 className="font-medium mb-3">Keys</h2>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="stack-xl min-w-[640px] w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
                 <th className="px-5 py-3 font-medium">Label</th>
@@ -130,21 +131,21 @@ export function StorageKeysManager() {
             <tbody className="divide-y divide-slate-50">
               {keys.map((k) => (
                 <tr key={k.id} className="hover:bg-slate-50/70">
-                  <td className="px-5 py-3 font-medium text-slate-800">{k.label}</td>
-                  <td className="px-5 py-3 text-slate-600">{k.provider === "r2" ? "Cloudflare R2" : "Backblaze B2"}</td>
-                  <td className="px-5 py-3 text-slate-600">
+                  <td data-label="Label" className="px-5 py-3 font-medium text-slate-800">{k.label}</td>
+                  <td data-label="Provider" className="px-5 py-3 text-slate-600">{k.provider === "r2" ? "Cloudflare R2" : "Backblaze B2"}</td>
+                  <td data-label="Bucket" className="px-5 py-3 text-slate-600">
                     {k.bucket_name}{" "}
                     <span className="text-slate-400">
                       ({k.provider === "r2" ? k.account_id : k.region})
                     </span>
                   </td>
-                  <td className="px-5 py-3 font-mono text-xs text-slate-500">{k.key_id}</td>
-                  <td className="px-5 py-3">
+                  <td data-label="Key ID" className="px-5 py-3 font-mono text-xs text-slate-500">{k.key_id}</td>
+                  <td data-label="State" className="px-5 py-3">
                     {k.status === "revoked"
                       ? <Pill tone="slate">revoked</Pill>
                       : k.is_active ? <Pill tone="emerald">active</Pill> : <Pill tone="amber">standby</Pill>}
                   </td>
-                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                  <td data-label="" className="px-5 py-3 text-right whitespace-nowrap">
                     {k.status === "active" && !k.is_active && <button onClick={() => activate(k.id)} className="mr-3 text-indigo-600 text-xs hover:underline">Make active</button>}
                     {k.status === "active" && <button onClick={() => revoke(k.id)} className="text-rose-600 text-xs hover:underline">Revoke</button>}
                   </td>
@@ -153,6 +154,7 @@ export function StorageKeysManager() {
               {keys.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400">No keys yet.</td></tr>}
             </tbody>
           </table>
+</div>
         </div>
       </section>
     </div>

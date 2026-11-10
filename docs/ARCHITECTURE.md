@@ -74,6 +74,14 @@ Migrations live in `supabase/migrations/` and are run by hand in the Supabase SQ
 | `/settings/activity` | super admin | Activity log. |
 | `/share/[token]` | public | Shared assets grouped by campaign and folder, optional password. |
 
+### Responsive layout
+
+Phones (below 768px) get `MobileNav`: a sticky top bar (menu, logo, assistant shortcut) and a
+slide-out panel with the same links, the user, sign-out and the version. From 768px the sidebar
+is fixed at 240px. List screens switch from cards to tables only where the table fits beside the
+sidebar (`stack-sm` below 1024px, `stack-xl` below 1280px; Search and Users use the same
+thresholds). Contributor rules are in `CLAUDE.md` under "Mobile and responsive rules".
+
 ## 5. API endpoints
 
 Generated from the code (`export async function GET/POST/…` and the auth call in each handler).

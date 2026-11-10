@@ -140,7 +140,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 sm:p-6">
         <div className="mb-6 flex items-center gap-2">
           <div className="grid h-8 w-8 place-items-center rounded-md bg-brand text-sm font-bold text-white">W</div>
           <span className="font-semibold">Wstorage</span>
@@ -196,8 +196,8 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                     className="flex w-full items-center justify-between gap-3 border-b bg-neutral-50/60 px-5 py-3 text-left hover:bg-neutral-100/70"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-slate-900">{g.campaign || "Files"}</p>
-                      {path && <p className="truncate text-xs font-medium text-slate-500">{path}</p>}
+                      <p className="text-base font-semibold text-slate-900 sm:truncate">{g.campaign || "Files"}</p>
+                      {path && <p className="text-xs font-medium text-slate-500 sm:truncate">{path}</p>}
                     </div>
                     <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-slate-500">
                       <span className="rounded-full bg-slate-100 px-2 py-0.5">{g.count} files</span>
@@ -222,7 +222,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                                 <div className="flex min-w-0 items-center gap-3">
                                   <span className="text-xl">{iconFor(f.name, f.content_type)}</span>
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-900">{f.name}</p>
+                                    <p className="wrap-anywhere text-sm font-semibold text-slate-900 sm:truncate">{f.name}</p>
                                     <p className="text-xs font-medium text-slate-500">{fmtSize(f.size_bytes)}</p>
                                   </div>
                                 </div>

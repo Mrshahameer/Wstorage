@@ -9,8 +9,7 @@
   queries, keyword fallback, per-reply status line, AI Control usage and key tests, chat history
   that survives tab switches. Architecture and every endpoint documented in `docs/ARCHITECTURE.md`.
 - **Next task:** Owner runs migration `0009_ai_observability.sql`, adds Gemini keys from several
-  Google projects in AI Control, and tests the assistant. Then: mobile navigation (the sidebar is
-  hidden below the md breakpoint and there is no mobile menu yet).
+  Google projects in AI Control, and tests the assistant. Mobile layout is done (session 8).
 - **Last updated:** 2026-11-10
 - **⚠️ Env note:** the live DB's one active storage key (R2) was encrypted with the ORIGINAL
   `APP_ENCRYPTION_KEY`. Storage ops (presign/upload/download) return a clean 400 until that exact
@@ -104,6 +103,11 @@ It is additive and idempotent (safe to re-run). No existing data is dropped.
 
 ## Session log
 _Newest first. One or two lines per working session: what got done, what's next._
+
+- **2026-11-10 (session 8)**: full-app mobile layout. Phone top bar and slide-out menu. Search,
+  Users, Categories, Folders, Share links and Storage keys turn into cards where the table would
+  not fit. Long file names wrap, dialogs scroll, inputs shrink in rows. Audited 16 screens and 3
+  dialogs at 360/390/768/1024/1280/1440px. Migration 0009 run by the owner.
 
 - **2026-11-10 (session 7)** — Assistant rebuilt: access-scoped catalog in the model's context,
   Gemini/Groq native tool calling (get_assets, find_missing, search_files, show_campaigns),

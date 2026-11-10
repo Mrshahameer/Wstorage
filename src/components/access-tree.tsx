@@ -152,15 +152,15 @@ export function AccessTree({ userId, email, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 overflow-y-auto" onClick={onClose}>
       <div className="mt-12 w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+          <div className="min-w-0">
             <h2 className="text-base font-semibold">Manage access</h2>
-            <p className="text-xs text-slate-500">{email}</p>
+            <p className="wrap-anywhere text-xs text-slate-500">{email}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+          <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-6">
+        <div className="max-h-[60vh] overflow-y-auto p-4 sm:p-6">
           {loading ? <p className="text-sm text-slate-400">Loading…</p> : (
             <>
               <p className="text-xs text-slate-500 mb-2">

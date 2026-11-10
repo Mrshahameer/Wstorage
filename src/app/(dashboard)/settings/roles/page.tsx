@@ -34,7 +34,7 @@ export default async function RolesPage() {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+        <table className="min-w-[640px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="px-5 py-3 font-medium">Permission</th>

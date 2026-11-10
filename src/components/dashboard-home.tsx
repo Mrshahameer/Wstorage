@@ -43,12 +43,12 @@ export function DashboardHome({ isAdmin, email }: { isAdmin: boolean; email: str
       {/* Quick search */}
       <form
         onSubmit={(e) => { e.preventDefault(); window.location.href = `/files?q=${encodeURIComponent(q)}`; }}
-        className="flex gap-2"
+        className="flex flex-wrap gap-2"
       >
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search campaigns and resources…"
-          className="w-full max-w-lg rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
-        <button className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Search</button>
-        <Link href="/library" className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100">Browse library</Link>
+          className="w-full min-w-0 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:w-auto sm:max-w-lg sm:flex-1" />
+        <button className="flex-1 whitespace-nowrap rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 sm:flex-none">Search</button>
+        <Link href="/library" className="flex-1 whitespace-nowrap rounded-lg border border-slate-200 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-100 sm:flex-none">Browse library</Link>
       </form>
 
       {isAdmin && (

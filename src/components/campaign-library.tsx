@@ -181,12 +181,12 @@ export function CampaignLibrary({ canUpload }: { canUpload: boolean }) {
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <ul className="divide-y divide-slate-50">
                   {files.map((f) => (
-                    <li key={f.id} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50/70">
-                      <Link href={`/files/${f.id}`} onClick={() => { try { sessionStorage.setItem("wstorage.lib.return", "1"); } catch { /* ignore */ } }} className="flex min-w-0 items-center gap-3">
+                    <li key={f.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-slate-50/70 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
+                      <Link href={`/files/${f.id}`} onClick={() => { try { sessionStorage.setItem("wstorage.lib.return", "1"); } catch { /* ignore */ } }} className="flex min-w-0 items-start gap-3 sm:items-center">
                         <span className="text-lg">{iconFor(f.extension)}</span>
-                        <span className="truncate font-medium text-slate-800 hover:text-indigo-600">{f.name}</span>
+                        <span className="wrap-anywhere font-medium text-slate-800 hover:text-indigo-600 sm:truncate">{f.name}</span>
                       </Link>
-                      <div className="flex shrink-0 items-center gap-4 text-xs text-slate-400">
+                      <div className="flex shrink-0 items-center justify-between gap-4 pl-9 text-xs text-slate-500 sm:justify-start sm:pl-0">
                         <span>{fmtBytes(f.size_bytes)}</span>
                         <a href={`/api/download/${f.id}`} className="rounded-md border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100">Download</a>
                       </div>

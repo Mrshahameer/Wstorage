@@ -111,7 +111,8 @@ export default function CategoriesPage() {
 
       {/* List */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="stack-sm min-w-[640px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="px-5 py-3 font-medium">Category Name</th>
@@ -133,7 +134,7 @@ export default function CategoriesPage() {
             ) : (
               categories.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50/50">
-                  <td className="px-5 py-3 font-medium text-slate-800">
+                  <td data-label="Category Name" className="px-5 py-3 font-medium text-slate-800">
                     {editingId === c.id ? (
                       <input
                         value={editName}
@@ -145,10 +146,10 @@ export default function CategoriesPage() {
                       c.name
                     )}
                   </td>
-                  <td className="px-5 py-3 text-slate-500">
+                  <td data-label="Created Date" className="px-5 py-3 text-slate-500">
                     {new Date(c.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-5 py-3 text-right space-x-2">
+                  <td data-label="Actions" className="px-5 py-3 text-right space-x-2">
                     {editingId === c.id ? (
                       <>
                         <button
@@ -189,6 +190,7 @@ export default function CategoriesPage() {
             )}
           </tbody>
         </table>
+</div>
       </div>
     </div>
   );

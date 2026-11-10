@@ -81,12 +81,19 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
+  async function deleteFile(f: FileRow) {
+    if (!confirm(`Are you sure you want to delete "${f.name}"?`)) return;
+    const res = await fetch(`/api/files/${f.id}`, { method: "DELETE" });
+    if (res.ok) load();
+    else alert((await res.json().catch(() => ({}))).error || "Failed to delete file");
+  }
+
   const clearFilters = () => { setCategoryId(""); setVerticalId(""); setCampaignId(""); setResourceTypeId(""); setExt(""); };
   const hasFilters = categoryId || verticalId || campaignId || resourceTypeId || ext;
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
           <p className="text-sm text-slate-500 mt-1">Find any campaign asset by name, tag, vertical, or resource type.</p>
@@ -104,7 +111,7 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
           className="w-full max-w-md rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-3 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
         {(() => { const s = "rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 bg-white"; return (<>
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={s}>
             <option value="">All categories</option>
@@ -118,12 +125,54 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
             <option value="">All resource types</option>
             {resourceTypes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="File type (mp4, pdf…)" className={s + " w-36"} />
+          <input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="File type (mp4, pdf…)" className={s + " w-full sm:w-36"} />
           {hasFilters && <button onClick={clearFilters} className="text-xs text-indigo-600 hover:underline">Clear filters</button>}
         </>); })()}
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* Phones: one card per file. */}
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white lg:hidden">
+        {loading ? (
+          <p className="px-4 py-10 text-center text-sm text-slate-500">Loading…</p>
+        ) : files.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <div className="font-medium text-slate-600">No files yet</div>
+            <div className="mt-1 text-xs text-slate-500">{canUpload ? "Upload your first file to get started." : "Files shared with you will appear here."}</div>
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {files.map((f) => (
+              <li key={f.id} className="px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl leading-none">{iconFor(f.extension)}</span>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/files/${f.id}`} className="break-all text-sm font-semibold text-slate-900 hover:text-indigo-600">{f.name}</Link>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {fmtBytes(Number(f.size_bytes))} · {new Date(f.created_at).toLocaleDateString()} · {f.download_count} download{f.download_count === 1 ? "" : "s"}
+                    </p>
+                    {f.description && <p className="mt-0.5 text-xs text-slate-500">{f.description}</p>}
+                    {f.tags && f.tags.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {f.tags.map((t) => (
+                          <button key={t} onClick={() => setQ(t)} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">#{t}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-2 pl-8">
+                  <a href={`/api/download/${f.id}`} className="flex-1 rounded-md border border-slate-200 px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100">Download</a>
+                  {canUpload && (
+                    <button onClick={() => deleteFile(f)} className="flex-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100">Delete</button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-4 hidden overflow-hidden rounded-xl border border-slate-200 bg-white lg:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
@@ -187,16 +236,7 @@ export function FilesBrowser({ canUpload }: { canUpload: boolean }) {
                   </a>
                   {canUpload && (
                     <button
-                      onClick={async () => {
-                        if (!confirm(`Are you sure you want to delete "${f.name}"?`)) return;
-                        const res = await fetch(`/api/files/${f.id}`, { method: "DELETE" });
-                        if (res.ok) {
-                          load();
-                        } else {
-                          const j = await res.json();
-                          alert(j.error || "Failed to delete file");
-                        }
-                      }}
+                      onClick={() => deleteFile(f)}
                       className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 transition">
                       Delete
                     </button>

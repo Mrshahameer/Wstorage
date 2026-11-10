@@ -238,7 +238,7 @@ export default function AiControlPage() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-[640px] w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                         <th className="px-5 py-2 font-semibold">Model</th>
@@ -300,13 +300,13 @@ export default function AiControlPage() {
               </div>
               <p className="mb-2 mt-2 text-xs text-slate-600">Comma-separated. If a model is out of quota, overloaded or retired, the next one answers. Change this when Google retires a model; no code change needed.</p>
               <div className="flex flex-wrap items-end gap-3">
-                <label className="text-sm">
+                <label className="w-full max-w-full text-sm sm:w-auto">
                   <span className="mb-1 block text-slate-700">Gemini models</span>
-                  <input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} className={input + " w-[28rem] max-w-full font-mono text-xs"} />
+                  <input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} className={input + " w-full max-w-full font-mono text-xs sm:w-[28rem]"} />
                 </label>
-                <label className="text-sm">
+                <label className="w-full text-sm sm:w-auto">
                   <span className="mb-1 block text-slate-700">Groq model</span>
-                  <input value={groqModel} onChange={(e) => setGroqModel(e.target.value)} className={input + " w-56 font-mono text-xs"} />
+                  <input value={groqModel} onChange={(e) => setGroqModel(e.target.value)} className={input + " w-full font-mono text-xs sm:w-56"} />
                 </label>
                 <button onClick={() => saveSettings({ gemini_model: geminiModel.trim() || undefined, groq_model: groqModel.trim() || undefined })}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">

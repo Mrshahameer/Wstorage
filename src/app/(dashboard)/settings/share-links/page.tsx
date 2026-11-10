@@ -181,7 +181,8 @@ export default function ShareLinksPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="stack-sm min-w-[640px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="px-5 py-3 font-medium">Name</th>
@@ -196,16 +197,16 @@ export default function ShareLinksPage() {
               <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400">No share links yet.</td></tr>
             ) : links.map((l) => (
               <tr key={l.id} className="hover:bg-slate-50/50">
-                <td className="px-5 py-3">
+                <td data-label="Name" className="px-5 py-3">
                   <div className="font-medium text-slate-800">{l.name || "Untitled"}</div>
-                  <button className="text-xs text-indigo-600 hover:underline" onClick={() => navigator.clipboard.writeText(shareUrl(l.token))}>Copy link</button>
+                  <button className="shrink-0 whitespace-nowrap text-xs text-indigo-600 hover:underline" onClick={() => navigator.clipboard.writeText(shareUrl(l.token))}>Copy link</button>
                 </td>
-                <td className="px-5 py-3 text-slate-600">{l.current_downloads}{l.max_downloads != null ? ` / ${l.max_downloads}` : ""}</td>
-                <td className="px-5 py-3 text-slate-500">{l.expires_at ? new Date(l.expires_at).toLocaleDateString() : "Never"}</td>
-                <td className="px-5 py-3">
+                <td data-label="Downloads" className="px-5 py-3 text-slate-600">{l.current_downloads}{l.max_downloads != null ? ` / ${l.max_downloads}` : ""}</td>
+                <td data-label="Expires" className="px-5 py-3 text-slate-500">{l.expires_at ? new Date(l.expires_at).toLocaleDateString() : "Never"}</td>
+                <td data-label="Status" className="px-5 py-3">
                   <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${l.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>{l.status}</span>
                 </td>
-                <td className="px-5 py-3 text-right space-x-2">
+                <td data-label="Actions" className="px-5 py-3 text-right space-x-2">
                   {l.status === "active"
                     ? <button className="rounded border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100" onClick={() => setStatus(l.id, "disabled")}>Disable</button>
                     : <button className="rounded border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100" onClick={() => setStatus(l.id, "active")}>Enable</button>}
@@ -215,6 +216,7 @@ export default function ShareLinksPage() {
             ))}
           </tbody>
         </table>
+</div>
       </div>
     </div>
   );
