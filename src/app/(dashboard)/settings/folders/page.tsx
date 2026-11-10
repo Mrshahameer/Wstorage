@@ -112,7 +112,8 @@ export default function FoldersSettingsPage() {
 
       {/* List */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="stack-sm min-w-[640px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="px-5 py-3 font-medium">Folder Name</th>
@@ -135,7 +136,7 @@ export default function FoldersSettingsPage() {
             ) : (
               folders.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-50/50">
-                  <td className="px-5 py-3 font-medium text-slate-800">
+                  <td data-label="Folder Name" className="px-5 py-3 font-medium text-slate-800">
                     {editingId === f.id ? (
                       <input
                         value={editName}
@@ -150,11 +151,11 @@ export default function FoldersSettingsPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-slate-500 font-mono text-xs">{f.path}</td>
-                  <td className="px-5 py-3 text-slate-500">
+                  <td data-label="Path" className="px-5 py-3 text-slate-500 font-mono text-xs">{f.path}</td>
+                  <td data-label="Created Date" className="px-5 py-3 text-slate-500">
                     {new Date(f.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-5 py-3 text-right space-x-2">
+                  <td data-label="Actions" className="px-5 py-3 text-right space-x-2">
                     {editingId === f.id ? (
                       <>
                         <button
@@ -195,6 +196,7 @@ export default function FoldersSettingsPage() {
             )}
           </tbody>
         </table>
+</div>
       </div>
     </div>
   );

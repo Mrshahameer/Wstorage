@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser, roleAtLeast } from "@/lib/auth";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { SignOutButton } from "@/components/sign-out-button";
+import { MobileNav } from "@/components/mobile-nav";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
@@ -12,8 +13,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const canShare = roleAtLeast(user.role, "bd_manager");
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      <aside className="hidden md:flex w-60 shrink-0 flex-col justify-between border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300">
+    <div className="min-h-screen flex flex-col bg-slate-50 md:flex-row">
+      <MobileNav
+        isAdmin={isAdmin}
+        isSuper={isSuper}
+        canShare={canShare}
+        email={user.email}
+        role={user.role}
+        version={process.env.NEXT_PUBLIC_BUILD_SHA ?? "local"}
+      />
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-slate-800/60 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 md:flex">
         <div>
           <div className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-800/60">
             <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-indigo-900/30">W</div>

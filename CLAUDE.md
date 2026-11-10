@@ -56,6 +56,27 @@ Live app: https://websterassets.vercel.app (auto-deploys from `main`).
 9. **Never trust model output.** Every campaign ref or folder name the AI sends is validated
    against the user's own catalog before any query runs.
 
+## Mobile and responsive rules
+
+The app must work from a 360px phone to a desktop. Below 768px there is a top bar with a
+slide-out menu (`src/components/mobile-nav.tsx`). From 768px the fixed 240px sidebar appears,
+so content is about 240px narrower than the viewport.
+
+- **Lists with buttons per row** stay cards until the table fits beside the sidebar. Add
+  `stack-sm` to the `<table>` (cards below 1024px) or `stack-xl` for wide tables (cards below
+  1280px). Give every `<td>` a `data-label` equal to its column header. The first cell is the
+  card title. A cell labeled `Actions` (or empty) holds the buttons. Read-only tables may scroll
+  instead, inside `overflow-x-auto` with a `min-w-[640px]` table.
+- **File names have no spaces** (`ACA_PureInbound_Landing_v2.html`). Use `wrap-anywhere` on any
+  element that shows a full file name in a flex row, and truncate on desktop only
+  (`sm:truncate`). One too-wide word makes phones zoom the whole page out.
+- In a row of input and button, inputs may shrink (global `min-width: 0`) and buttons get
+  `shrink-0 whitespace-nowrap`. Header rows with a title and a button use `flex-wrap`.
+- Dialogs are `fixed inset-0 overflow-y-auto`, with `items-start` on phones so tall content scrolls.
+- Full-height pages use `100dvh`, not `100vh`.
+- Check changes at 360, 390, 768, 1024 and 1280px. Nothing may extend past the screen or its
+  card, and no button may hide behind sideways scrolling.
+
 ## Repo map
 
 ```

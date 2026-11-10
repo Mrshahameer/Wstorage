@@ -81,7 +81,7 @@ export function KeyRequestsPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
               Personal Storage Key Requests
             </h3>
             {pendingCount > 0 && (
-              <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse">
+              <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse whitespace-nowrap shrink-0">
                 {pendingCount} Pending
               </span>
             )}

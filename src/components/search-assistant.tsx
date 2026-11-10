@@ -421,7 +421,7 @@ export function SearchAssistant({ canShare, userId }: { canShare: boolean; userI
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-7rem)] max-w-3xl flex-col">
+    <div className="mx-auto flex h-[calc(100dvh-6.5rem)] max-w-3xl flex-col md:h-[calc(100dvh-7rem)]">
       <div className="flex items-center gap-3 pb-4">
         <span className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-900/20">
           <Sparkle className="h-5 w-5" />

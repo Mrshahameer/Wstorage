@@ -40,7 +40,8 @@ export default function ActivityLogsPage() {
         className="w-full max-w-md rounded-lg border border-slate-300 px-3.5 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="min-w-[640px] w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="px-5 py-3 font-medium">Who</th>
@@ -68,6 +69,7 @@ export default function ActivityLogsPage() {
             ))}
           </tbody>
         </table>
+</div>
       </div>
     </div>
   );

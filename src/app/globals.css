@@ -62,3 +62,47 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-msg-in, .animate-pop-in, .animate-float, .animate-blob, .typing span { animation: none !important; }
 }
+
+/* File names like ACA_PureInbound_Landing_Desktop_v2_FINAL.html have no spaces.
+   A word that cannot fit its line breaks at the edge instead of widening the page
+   (on phones a too-wide word zooms the whole page out). break-word never squeezes
+   buttons; .wrap-anywhere is the stronger rule for file names inside flex rows. */
+body { overflow-wrap: break-word; }
+.wrap-anywhere { overflow-wrap: anywhere; }
+
+/* Form fields may shrink inside a row. By default an input will not go below its
+   intrinsic width (about 150-200px), which pushes buttons off small screens. */
+input, select, textarea { min-width: 0; }
+
+/* Tables marked .stack-sm become cards below 1024px, and .stack-xl (wide tables)
+   below 1280px: widths where the table would not fit beside the sidebar. The first
+   cell is the title, the others are "Label  value" lines, the actions sit at the
+   bottom. Labels come from each cell's data-label (its column header). */
+@media (max-width: 1023.98px) {
+  table.stack-sm { min-width: 0 !important; }
+  table.stack-sm thead { display: none; }
+  table.stack-sm, table.stack-sm tbody, table.stack-sm tr { display: block; width: 100%; }
+  table.stack-sm tr { padding: 0.75rem 1rem; }
+  table.stack-sm td { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 0.15rem 0 !important; text-align: right; }
+  table.stack-sm td::before { content: attr(data-label); flex-shrink: 0; text-align: left; font-size: 0.75rem; font-weight: 500; color: rgb(100 116 139); }
+  table.stack-sm td:first-child { justify-content: flex-start; text-align: left; font-weight: 600; padding-bottom: 0.35rem !important; }
+  table.stack-sm td:first-child::before { content: none; }
+  table.stack-sm td[data-label=""], table.stack-sm td[data-label="Actions"] { justify-content: flex-start; flex-wrap: wrap; padding-top: 0.5rem !important; text-align: left; }
+  table.stack-sm td[data-label=""]::before, table.stack-sm td[data-label="Actions"]::before { content: none; }
+  table.stack-sm td[colspan] { display: block; padding: 1.5rem 0 !important; text-align: center; font-weight: 400; }
+  table.stack-sm td[colspan]::before { content: none; }
+}
+@media (max-width: 1279.98px) {
+  table.stack-xl { min-width: 0 !important; }
+  table.stack-xl thead { display: none; }
+  table.stack-xl, table.stack-xl tbody, table.stack-xl tr { display: block; width: 100%; }
+  table.stack-xl tr { padding: 0.75rem 1rem; }
+  table.stack-xl td { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 0.15rem 0 !important; text-align: right; }
+  table.stack-xl td::before { content: attr(data-label); flex-shrink: 0; text-align: left; font-size: 0.75rem; font-weight: 500; color: rgb(100 116 139); }
+  table.stack-xl td:first-child { justify-content: flex-start; text-align: left; font-weight: 600; padding-bottom: 0.35rem !important; }
+  table.stack-xl td:first-child::before { content: none; }
+  table.stack-xl td[data-label=""], table.stack-xl td[data-label="Actions"] { justify-content: flex-start; flex-wrap: wrap; padding-top: 0.5rem !important; text-align: left; }
+  table.stack-xl td[data-label=""]::before, table.stack-xl td[data-label="Actions"]::before { content: none; }
+  table.stack-xl td[colspan] { display: block; padding: 1.5rem 0 !important; text-align: center; font-weight: 400; }
+  table.stack-xl td[colspan]::before { content: none; }
+}

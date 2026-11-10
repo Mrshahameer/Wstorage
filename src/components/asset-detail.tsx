@@ -87,7 +87,7 @@ export function AssetDetail({ id, canShare }: { id: string; canShare: boolean })
     <div className="max-w-4xl space-y-6">
       <button onClick={goBack} className="text-sm text-indigo-600 hover:underline">← Back</button>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{file.name}</h1>
+        <h1 className="wrap-anywhere text-2xl font-semibold tracking-tight">{file.name}</h1>
         {crumbs.length > 0 && <p className="text-sm text-slate-500 mt-1">{crumbs.join("  ›  ")}</p>}
       </div>
 
