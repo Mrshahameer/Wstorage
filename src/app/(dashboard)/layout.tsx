@@ -27,10 +27,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
             {user.role.replace("_", " ")}
           </div>
           <div className="mt-3"><SignOutButton /></div>
+          <div className="mt-3 text-[10px] text-slate-500" title={`Built ${process.env.NEXT_PUBLIC_BUILD_TIME}`}>
+            Version {process.env.NEXT_PUBLIC_BUILD_SHA} · {new Date(process.env.NEXT_PUBLIC_BUILD_TIME ?? Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+          </div>
         </div>
       </aside>
       <main className="flex-1 min-w-0">
-        <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
       </main>
     </div>
   );

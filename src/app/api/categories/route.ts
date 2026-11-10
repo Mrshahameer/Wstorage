@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser, requireRole, logActivity } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
+import { invalidateCatalog } from "@/lib/assistant/data";
 
 export async function GET() {
   try {
@@ -27,6 +28,7 @@ const CreateSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    invalidateCatalog(); // the assistant sees this change right away
     const actor = await requireRole("admin");
     const body = CreateSchema.parse(await req.json());
     const { data, error } = await supabaseAdmin()

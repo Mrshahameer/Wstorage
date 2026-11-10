@@ -6,5 +6,5 @@ export default async function AssistantPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const canShare = roleAtLeast(user.role, "bd_manager");
-  return <SearchAssistant canShare={canShare} />;
+  return <SearchAssistant canShare={canShare} userId={user.id} />;
 }

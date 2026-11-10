@@ -26,10 +26,11 @@ export interface AiSettings {
 }
 
 // gemini_model is a comma-separated chain tried in order (model-level failover).
-// Order is from a live benchmark of JSON intent parsing: flash-lite models are
-// fast, accurate, and free (500 requests/day). Gemma 4 is left out because it
-// has no JSON output mode and answers in prose, which breaks intent parsing.
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest,gemini-flash-latest";
+// Order is from a live benchmark of native tool calling (npm run eval:assistant):
+// 3.5-flash-lite made every completed decision correctly, flash-lite-latest is a
+// solid backup, 3.1-flash-lite was often overloaded. All free tier. Gemma 4 is
+// left out: it has no tool calling or JSON mode and answers in prose.
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.1-flash-lite,gemini-flash-latest";
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 
 /** Split a comma-separated model chain into a clean ordered list. */
@@ -74,7 +75,8 @@ export async function getAiSettings(): Promise<AiSettings> {
   // Treat it (and an empty value) as "use the benchmarked chain" so the app
   // self-upgrades with no migration. A real custom value is always honored.
   const stored = (data?.gemini_model || "").trim();
-  const gemini_model = !stored || stored === "gemini-flash-latest" ? DEFAULT_GEMINI_MODEL : stored;
+  const LEGACY = ["gemini-flash-latest", "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest,gemini-flash-latest"];
+  const gemini_model = !stored || LEGACY.includes(stored) ? DEFAULT_GEMINI_MODEL : stored;
   return {
     provider_order: order && order.length ? order : ["gemini", "groq"],
     enabled: data?.enabled ?? true,
@@ -128,4 +130,11 @@ export async function coolDownKey(id: string, seconds: number): Promise<void> {
     .from("ai_keys")
     .update({ cooldown_until: new Date(Date.now() + seconds * 1000).toISOString(), last_used_at: new Date().toISOString() })
     .eq("id", id);
+}
+
+/** Decrypt one key for the "Test" button in AI Control. Admin routes only. */
+export async function getAiKeyForTest(id: string): Promise<{ provider: AiProvider; key: string } | null> {
+  const { data } = await supabaseAdmin().from("ai_keys").select("provider,api_key_encrypted").eq("id", id).maybeSingle();
+  if (!data) return null;
+  return { provider: data.provider as AiProvider, key: decryptSecret(data.api_key_encrypted) };
 }

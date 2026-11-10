@@ -4,11 +4,13 @@ import { requireRole, logActivity } from "@/lib/auth";
 import { getProviderForKeyId } from "@/lib/storage";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { handleError } from "@/lib/api";
+import { invalidateCatalog } from "@/lib/assistant/data";
 
 const Schema = z.object({ fileId: z.string().uuid() });
 
 export async function POST(req: NextRequest) {
   try {
+    invalidateCatalog(); // the assistant sees this change right away
     const user = await requireRole("admin");
     const { fileId } = Schema.parse(await req.json());
     const db = supabaseAdmin();

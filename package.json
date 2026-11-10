@@ -10,7 +10,9 @@
     "gen:key": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
     "test:b2": "node scripts/test-b2.mjs",
     "test:b2:keep": "node scripts/test-b2.mjs --keep",
-    "b2:cors": "node scripts/set-b2-cors.mjs"
+    "b2:cors": "node scripts/set-b2-cors.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "eval:assistant": "node --import tsx scripts/eval-assistant.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
@@ -30,6 +32,7 @@
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.6",
+    "tsx": "^4.20.6",
     "typescript": "^5.5.3"
   }
 }
